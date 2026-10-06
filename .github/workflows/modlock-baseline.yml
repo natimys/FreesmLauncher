@@ -1,0 +1,42 @@
+name: ModLock Windows baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: windows-2022
+    env:
+      ARTIFACT_NAME: Windows-MSVC-Qt6
+      BUILD_PLATFORM: official
+      BUILD_TYPE: Release
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Build the unmodified upstream revision before integrating ModLock.
+          ref: 163424fc202e451f05ca360ef431209664691137
+          submodules: recursive
+      - name: Setup existing Windows MSVC dependencies
+        uses: ./.github/actions/setup-dependencies
+        with:
+          build-type: Release
+          artifact-name: Windows-MSVC
+          vcvars-arch: amd64
+          qt-version: 6.10.2
+      - name: Configure unmodified launcher
+        run: cmake --preset windows_msvc
+      - name: Build
+        run: cmake --build --preset windows_msvc --config Release
+      - name: Test
+        run: ctest --preset windows_msvc --build-config Release
+      - name: Package
+        run: cmake --install build --config Release
+      - name: Upload baseline
+        uses: actions/upload-artifact@v6
+        with:
+          name: FreesmLauncher-baseline-Windows-MSVC-x64-163424fc
+          path: install/
+          if-no-files-found: error
