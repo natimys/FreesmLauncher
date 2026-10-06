@@ -55,6 +55,7 @@
 #include "launch/steps/LookupServerAddress.h"
 #include "launch/steps/PostLaunchCommand.h"
 #include "launch/steps/PreLaunchCommand.h"
+#include "launch/steps/ModLockUpdate.h"
 #include "launch/steps/QuitAfterGameStop.h"
 #include "launch/steps/TextPrint.h"
 
@@ -1169,6 +1170,11 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
     // create the .minecraft folder and server-resource-packs (workaround for Minecraft bug MCL-3732)
     {
         process->appendStep(makeShared<CreateGameFolders>(pptr));
+    }
+
+    // Check and transactionally apply ModLock updates before preparing Minecraft.
+    if (getManagedPackType() == "modlock") {
+        process->appendStep(makeShared<ModLockUpdate>(pptr));
     }
 
     if (!targetToJoin && settings()->get("JoinServerOnLaunch").toBool()) {

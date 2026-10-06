@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ManagedPackPage.h"
+#include "modlock/ModLockBridge.h"
 #include <QDesktopServices>
+#include <QJsonDocument>
 #include <QLineEdit>
 #include <QUrl>
 #include <QUrlQuery>
@@ -85,6 +87,8 @@ ManagedPackPage* ManagedPackPage::createPage(BaseInstance* inst, QString type, Q
         return new ModrinthManagedPackPage(inst, nullptr, parent);
     if (type == "flame" && (APPLICATION->capabilities() & Application::SupportsFlame))
         return new FlameManagedPackPage(inst, nullptr, parent);
+    if (type == "modlock")
+        return new ModLockManagedPackPage(inst, nullptr, parent);
 
     return new GenericManagedPackPage(inst, nullptr, parent);
 }
@@ -508,6 +512,137 @@ void FlameManagedPackPage::updateFromFile()
         return;
 
     updatePack(output, false);
+}
+
+ModLockManagedPackPage::ModLockManagedPackPage(BaseInstance* inst, InstanceWindow* instance_window, QWidget* parent)
+    : ManagedPackPage(inst, instance_window, parent)
+{
+    connect(ui->updateButton, &QPushButton::clicked, this, &ModLockManagedPackPage::update);
+    connect(ui->updateFromFileButton, &QPushButton::clicked, this, &ModLockManagedPackPage::update);
+    ui->updateFromFileButton->hide();
+    ui->versionsComboBox->hide();
+    ui->urlLine->hide();
+}
+
+void ModLockManagedPackPage::openedImpl()
+{
+    ManagedPackPage::openedImpl();
+    ui->packName->setText(m_inst->getManagedPackName());
+    ui->packVersion->setText(m_inst->getManagedPackVersionName());
+    ui->packOriginLabel->setText(tr("Repository / branch / lock file:"));
+    const QString repository = m_inst->settings()->get("ManagedPackURL").toString();
+    const QString branch = m_inst->settings()->get("ModLockBranch").toString();
+    const QString lockPath = m_inst->settings()->get("ModLockLockPath").toString();
+    ui->packOrigin->setText(QStringLiteral("<a href=\"%1\">%1</a> &nbsp;|&nbsp; %2 &nbsp;|&nbsp; %3")
+                                .arg(repository.toHtmlEscaped(), branch.toHtmlEscaped(), lockPath.toHtmlEscaped()));
+    ui->updateToVersionLabel->setText(tr("ModLock updates:"));
+    ui->updateButton->setText(tr("Check for updates"));
+    ui->updateButton->setEnabled(!m_inst->isRunning());
+    ui->changelogBox->setTitle(tr("Update preview"));
+    ui->changelogTextBrowser->setText(tr("Check the source for changes. The preview is pinned to a Git revision; applying it installs that exact revision."));
+}
+
+void ModLockManagedPackPage::setBusy(bool busy, const QString& status)
+{
+    m_busy = busy;
+    ui->updateButton->setEnabled(!busy && !m_inst->isRunning());
+    if (!status.isEmpty())
+        ui->changelogTextBrowser->setPlainText(status);
+}
+
+void ModLockManagedPackPage::update()
+{
+    if (!m_previewRevision.isEmpty()) {
+        applyPreview();
+        return;
+    }
+    if (m_busy || m_inst->isRunning()) {
+        CustomMessageBox::selectable(this, tr("ModLock update unavailable"),
+                                     tr("Stop the running game before checking or applying a ModLock update."), QMessageBox::Information)
+            ->show();
+        return;
+    }
+
+    m_previewRevision.clear();
+    setBusy(true, tr("Checking the ModLock source..."));
+    m_bridge = new ModLockBridge(m_inst->gameRoot(), this);
+    connect(m_bridge, &ModLockBridge::progress, this, [this](const QString&, const QString& message) {
+        ui->changelogTextBrowser->setPlainText(message);
+    });
+    connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) {
+        m_previewRevision = result.value("revision").toString();
+        const QJsonObject diff = result.value("diff").toObject();
+        const QString diffText = QString::fromUtf8(QJsonDocument(diff).toJson(QJsonDocument::Indented));
+        if (!m_previewRevision.isEmpty() && m_previewRevision == m_inst->getManagedPackVersionID()) {
+            ui->changelogTextBrowser->setPlainText(tr("This instance is already at the latest checked revision: %1").arg(m_previewRevision));
+            ui->updateButton->setText(tr("Check for updates"));
+            ui->updateButton->setEnabled(!m_inst->isRunning());
+            m_previewRevision.clear();
+        } else {
+            ui->changelogTextBrowser->setPlainText(tr("Preview revision: %1\n\n%2").arg(m_previewRevision, diffText));
+            ui->updateButton->setText(tr("Apply previewed update"));
+            ui->updateButton->setEnabled(!m_previewRevision.isEmpty() && !m_inst->isRunning());
+        }
+        m_busy = false;
+    });
+    connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) {
+        const QString message = error.value("message").toString(tr("ModLock could not complete the request."));
+        setBusy(false, tr("ModLock error: %1").arg(message).toHtmlEscaped());
+        CustomMessageBox::selectable(this, tr("ModLock update error"), message, QMessageBox::Critical)->show();
+    });
+    connect(m_bridge, &ModLockBridge::finished, this, [this] {
+        if (m_busy)
+            setBusy(false);
+        if (m_bridge) {
+            m_bridge->deleteLater();
+            m_bridge = nullptr;
+        }
+    });
+    if (!m_bridge->start("check")) {
+        setBusy(false, tr("Could not start the ModLock component."));
+        m_bridge->deleteLater();
+        m_bridge = nullptr;
+    }
+}
+
+void ModLockManagedPackPage::applyPreview()
+{
+    if (m_previewRevision.isEmpty() || m_busy || m_inst->isRunning())
+        return;
+    m_busy = true;
+    ui->updateButton->setEnabled(false);
+    ui->changelogTextBrowser->setPlainText(tr("Applying the previewed revision %1...").arg(m_previewRevision));
+    m_bridge = new ModLockBridge(m_inst->gameRoot(), this);
+    connect(m_bridge, &ModLockBridge::progress, this, [this](const QString&, const QString& message) {
+        ui->changelogTextBrowser->setPlainText(message);
+    });
+    connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) {
+        const QString revision = result.value("revision").toString();
+        if (!revision.isEmpty()) {
+            m_inst->settings()->set("ManagedPackVersionID", revision);
+            m_inst->settings()->set("ManagedPackVersionName", revision.left(12));
+            ui->packVersion->setText(revision.left(12));
+        }
+        m_previewRevision.clear();
+        ui->updateButton->setText(tr("Check for updates"));
+        setBusy(false, tr("ModLock update applied successfully. Installed revision: %1").arg(revision).toHtmlEscaped());
+    });
+    connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) {
+        const QString message = error.value("message").toString(tr("ModLock could not apply the update."));
+        setBusy(false, tr("ModLock error: %1").arg(message).toHtmlEscaped());
+        CustomMessageBox::selectable(this, tr("ModLock update error"), message, QMessageBox::Critical)->show();
+    });
+    connect(m_bridge, &ModLockBridge::finished, this, [this] {
+        if (m_bridge) {
+            m_bridge->deleteLater();
+            m_bridge = nullptr;
+        }
+    });
+    if (!m_bridge->start("apply", {{"revision", m_previewRevision}})) {
+        setBusy(false, tr("Could not start the ModLock component."));
+        m_bridge->deleteLater();
+        m_bridge = nullptr;
+    }
 }
 
 void ManagedPackPage::updatePack(const QUrl& url, bool trusted, QString versionID, QString versionName)

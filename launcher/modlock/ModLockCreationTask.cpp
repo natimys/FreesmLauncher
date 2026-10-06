@@ -36,6 +36,8 @@ std::unique_ptr<MinecraftInstance> ModLockCreationTask::createInstance()
     if (instance) {
         instance->setManagedPack("modlock", m_pack.value("repository").toString(), m_packName, m_revision, m_packVersion);
         instance->settings()->set("ManagedPackURL", m_pack.value("repository").toString());
+        instance->settings()->set("ModLockBranch", m_pack.value("branch").toString());
+        instance->settings()->set("ModLockLockPath", m_pack.value("lock_path").toString());
     }
     return instance;
 }

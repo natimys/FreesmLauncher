@@ -23,6 +23,7 @@ class ManagedPackPage;
 
 class InstanceTask;
 class InstanceWindow;
+class ModLockManagedPackPage;
 
 class ManagedPackPage : public QWidget, public BasePage {
     Q_OBJECT
@@ -159,4 +160,28 @@ class FlameManagedPackPage final : public ManagedPackPage {
 
     ModPlatform::IndexedPack m_pack;
     FlameAPI m_api;
+};
+
+class ModLockManagedPackPage final : public ManagedPackPage {
+    Q_OBJECT
+
+   public:
+    ModLockManagedPackPage(BaseInstance* inst, InstanceWindow* instance_window, QWidget* parent = nullptr);
+    ~ModLockManagedPackPage() override = default;
+
+    QString displayName() const override { return tr("ModLock"); }
+    QString id() const override { return "modlock"; }
+    QString helpPage() const override { return "ModLock"; }
+    void openedImpl() override;
+
+   public slots:
+    void update() override;
+
+   private:
+    void applyPreview();
+    void setBusy(bool busy, const QString& status = {});
+
+    class ModLockBridge* m_bridge = nullptr;
+    QString m_previewRevision;
+    bool m_busy = false;
 };

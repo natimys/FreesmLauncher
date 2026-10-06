@@ -166,6 +166,8 @@ set(LAUNCH_SOURCES
     launch/steps/PostLaunchCommand.h
     launch/steps/PreLaunchCommand.cpp
     launch/steps/PreLaunchCommand.h
+    launch/steps/ModLockUpdate.cpp
+    launch/steps/ModLockUpdate.h
     launch/steps/TextPrint.cpp
     launch/steps/TextPrint.h
     launch/steps/QuitAfterGameStop.cpp
