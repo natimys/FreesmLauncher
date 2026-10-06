@@ -66,3 +66,15 @@ ecm_add_test(XmlLogs_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR
 
 ecm_add_test(ConfigMigration_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ConfigMigration)
+
+if(TARGET modlock_payload)
+    add_executable(ModLockBridgeWorker ModLockBridgeWorker.cpp)
+    ecm_add_test(ModLockBridge_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+        TEST_NAME ModLockBridge)
+    add_dependencies(ModLockBridge modlock_payload ModLockBridgeWorker)
+    add_custom_command(TARGET ModLockBridge POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:ModLockBridgeWorker>"
+            "$<TARGET_FILE_DIR:ModLockBridge>/modlock.exe"
+        VERBATIM)
+endif()

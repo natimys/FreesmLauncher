@@ -47,6 +47,7 @@
 
 #include "DataMigrationTask.h"
 #include "java/JavaInstallList.h"
+#include "modlock/ModLockBridge.h"
 #include "net/PasteUpload.h"
 #include "tasks/Task.h"
 #include "tools/GenericProfiler.h"
@@ -1403,6 +1404,43 @@ void Application::setupWizardFinished(int status)
 void Application::performMainStartupAction()
 {
     m_status = Application::Initialized;
+#ifdef Q_OS_WIN
+    if (BuildConfig.LAUNCHER_NAME == QStringLiteral("FreesmModLock") && !m_modLockCompatibilityReady && !m_modLockCompatibilityFailed) {
+        m_status = Application::StartingUp;
+        if (m_modLockCompatibilityStarted)
+            return;
+
+        m_modLockCompatibilityStarted = true;
+        auto bridge = new ModLockBridge(m_dataPath, this);
+        connect(bridge, &ModLockBridge::finished, bridge, &QObject::deleteLater);
+        connect(bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject&) {
+            m_modLockCompatibilityReady = true;
+            performMainStartupAction();
+        });
+        connect(bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) {
+            m_modLockCompatibilityFailed = true;
+            const QString message = error.value("message").toString(tr("The bundled ModLock component could not be verified."));
+            auto dialog = CustomMessageBox::selectable(nullptr, tr("ModLock component error"),
+                                                       tr("The launcher cannot use ModLock features because its bundled component is missing or incompatible.\n\n%1")
+                                                           .arg(message),
+                                                       QMessageBox::Critical);
+            auto updateButton = dialog->addButton(tr("Update components"), QMessageBox::AcceptRole);
+            dialog->addButton(tr("Continue"), QMessageBox::RejectRole);
+            dialog->exec();
+            if (dialog->clickedButton() == updateButton) {
+                DesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/natimys/FreesmLauncher/releases")));
+            }
+            performMainStartupAction();
+        });
+        if (!bridge->startCompatibilityCheck()) {
+            m_modLockCompatibilityFailed = true;
+            bridge->deleteLater();
+            performMainStartupAction();
+        }
+        return;
+    }
+#endif
+
     if (!m_instanceIdToLaunch.isEmpty()) {
         auto inst = instances()->getInstanceById(m_instanceIdToLaunch);
         if (inst) {

@@ -16,6 +16,8 @@ set(CORE_SOURCES
     InstanceTask.cpp
     LoggedProcess.h
     LoggedProcess.cpp
+    modlock/ModLockBridge.h
+    modlock/ModLockBridge.cpp
     MessageLevel.cpp
     MessageLevel.h
     BaseVersion.h

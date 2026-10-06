@@ -281,6 +281,9 @@ class Application : public QApplication {
     Status m_status = Application::StartingUp;
     Capabilities m_capabilities;
     bool m_portable = false;
+    bool m_modLockCompatibilityStarted = false;
+    bool m_modLockCompatibilityReady = false;
+    bool m_modLockCompatibilityFailed = false;
 
 #ifdef Q_OS_MACOS
     Qt::ApplicationState m_prevAppState = Qt::ApplicationInactive;
