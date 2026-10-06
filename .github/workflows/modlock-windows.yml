@@ -1,0 +1,82 @@
+name: Freesm ModLock Windows x64
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/modlock
+    paths:
+      - '.github/workflows/modlock-windows.yml'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'launcher/**'
+      - 'program_info/**'
+      - 'libraries/modlock'
+      - '.gitmodules'
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    env:
+      BUILD_TYPE: Release
+    steps:
+      - name: Checkout launcher and pinned ModLock payload
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup pinned Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: libraries/modlock/go.mod
+          cache-dependency-path: libraries/modlock/go.sum
+
+      - name: Setup Python for vcpkg Meson ports
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Setup Windows MSVC, Java, vcpkg, and Qt
+        uses: ./.github/actions/setup-dependencies
+        with:
+          build-type: Release
+          artifact-name: Windows-MSVC
+          vcvars-arch: amd64
+          qt-version: 6.10.2
+
+      - name: Configure Freesm ModLock
+        run: cmake --preset windows_msvc_modlock
+
+      - name: Build launcher and bundled ModLock
+        run: cmake --build --preset windows_msvc_modlock --config Release
+
+      - name: Test Go component
+        working-directory: libraries/modlock
+        run: go test ./...
+
+      - name: Test launcher
+        run: ctest --preset windows_msvc_modlock --build-config Release
+
+      - name: Install package
+        run: cmake --install build-modlock --config Release
+
+      - name: Smoke test bundled bridge protocol
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'ModLock smoke данные with spaces'
+          $request = '{"type":"request","id":"ci-capabilities","operation":"capabilities"}'
+          $events = @($request | & .\install-modlock\modlock.exe bridge --protocol 1 --root $root)
+          if ($LASTEXITCODE -ne 0) { throw "ModLock bridge failed with exit code $LASTEXITCODE" }
+          if ($events.Count -ne 1) { throw "Expected one NDJSON result, got $($events.Count) lines" }
+          $result = $events[0] | ConvertFrom-Json
+          if ($result.type -ne 'result' -or $result.protocol -ne 1) { throw 'Unexpected protocol result' }
+
+      - name: Upload Windows x64 package
+        uses: actions/upload-artifact@v6
+        with:
+          name: Freesm-ModLock-Windows-x64
+          path: install-modlock/
+          if-no-files-found: error

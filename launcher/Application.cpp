@@ -275,6 +275,9 @@ QString combineAppDataPath(const QString& path)
 
 void handleConfigMigration()
 {
+    // Keep ModLock's account and launcher configuration separate from Freesm's.
+    if (BuildConfig.LAUNCHER_NAME != QStringLiteral("FreesmLauncher"))
+        return;
     if (!QFile::exists(BuildConfig.LAUNCHER_CONFIGFILE)) {
         struct Migration {
             QString configFile;
@@ -624,14 +627,16 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             QString configFile;
         };
 
-        std::array migrations = { Migration{ combineAppDataPath("../../ElyPrismLauncher"), "PineconeMC", "elyprismlauncher.cfg" },
-                                  Migration{ combineAppDataPath("../../PrismLauncher"), "Prism Launcher", "prismlauncher.cfg" },
-                                  Migration{ combineAppDataPath("../../PolyMC"), "PolyMC", "polymc.cfg" },
-                                  Migration{ combineAppDataPath("../../multimc"), "MultiMC", "multimc.cfg" } };
+        if (BuildConfig.LAUNCHER_NAME == QStringLiteral("FreesmLauncher")) {
+            std::array migrations = { Migration{ combineAppDataPath("../../ElyPrismLauncher"), "PineconeMC", "elyprismlauncher.cfg" },
+                                      Migration{ combineAppDataPath("../../PrismLauncher"), "Prism Launcher", "prismlauncher.cfg" },
+                                      Migration{ combineAppDataPath("../../PolyMC"), "PolyMC", "polymc.cfg" },
+                                      Migration{ combineAppDataPath("../../multimc"), "MultiMC", "multimc.cfg" } };
 
-        for (const auto& [oldData, name, configFile] : migrations) {
-            if (handleDataMigration(dataPath, oldData, name, configFile)) {
-                break;
+            for (const auto& [oldData, name, configFile] : migrations) {
+                if (handleDataMigration(dataPath, oldData, name, configFile)) {
+                    break;
+                }
             }
         }
     }

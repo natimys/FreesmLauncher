@@ -1,3 +1,7 @@
 [submodule "libraries/libnbtplusplus"]
 	path = libraries/libnbtplusplus
 	url = https://github.com/FreesmTeam/libnbtplusplus.git
+[submodule "libraries/modlock"]
+	path = libraries/modlock
+	url = https://github.com/natimys/modlock.git
+	branch = codex/freesm-integration

@@ -1482,6 +1482,10 @@ endif()
 
 add_executable(${Launcher_Name} MACOSX_BUNDLE WIN32 main.cpp ${LAUNCHER_RCS})
 
+if(TARGET modlock_payload)
+    add_dependencies(${Launcher_Name} modlock_payload)
+endif()
+
 if(${Launcher_USE_PCH})
     target_precompile_headers(${Launcher_Name} REUSE_FROM Launcher_logic)
 endif()

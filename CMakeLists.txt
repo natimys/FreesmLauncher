@@ -172,7 +172,7 @@ endif()
 
 ######## Set URLs ########
 set(Launcher_NEWS_RSS_URL "https://freesmlauncher.org/feed" CACHE STRING "URL to fetch Freesm Launcher's news RSS feed from.")
-set(Launcher_NEWS_OPEN_URL "https://github.com/FreesmTeam/FreesmLauncher/releases" CACHE STRING "URL that gets opened when the user clicks 'More News'")
+set(Launcher_NEWS_OPEN_URL "https://github.com/natimys/FreesmLauncher/releases" CACHE STRING "URL that gets opened when the user clicks 'More News'")
 set(Launcher_WIKI_URL "https://prismlauncher.org/wiki/" CACHE STRING "URL that gets opened when the user clicks 'Launcher Help'")
 set(Launcher_HELP_URL "https://prismlauncher.org/wiki/help-pages/%1" CACHE STRING "URL (with arg %1 to be substituted with page-id) that gets opened when the user requests help in a dialog window")
 set(Launcher_LOGIN_CALLBACK_URL "https://freesmlauncher.org/successful-login" CACHE STRING "URL that gets opened when the user successfully logins.")
@@ -192,7 +192,7 @@ set(Launcher_VERSION_NAME4_COMMA "${Launcher_VERSION_MAJOR},${Launcher_VERSION_M
 set(Launcher_BUILD_PLATFORM "unknown" CACHE STRING "A short string identifying the platform that this build was built for. Only used to display in the about dialog.")
 
 # Github repo URL with releases for updater
-set(Launcher_UPDATER_GITHUB_REPO "https://github.com/FreesmTeam/FreesmLauncher" CACHE STRING "Base github URL for the updater.")
+set(Launcher_UPDATER_GITHUB_REPO "https://github.com/natimys/FreesmLauncher" CACHE STRING "Base github URL for the updater.")
 
 # Name to help updater identify valid artifacts
 set(Launcher_BUILD_ARTIFACT "" CACHE STRING "Artifact name to help the updater identify valid artifacts.")
@@ -207,7 +207,7 @@ set(Launcher_IMGUR_CLIENT_ID "5b97b0713fba4a3" CACHE STRING "Client ID you can g
 set(Launcher_DISCORD_CLIENT_ID "1378362128125263882" CACHE STRING "Discord application ID")
 
 # Bug tracker URL
-set(Launcher_BUG_TRACKER_URL "https://github.com/FreesmTeam/FreesmLauncher/issues" CACHE STRING "URL for the bug tracker.")
+set(Launcher_BUG_TRACKER_URL "https://github.com/natimys/FreesmLauncher/issues" CACHE STRING "URL for the bug tracker.")
 
 # Translations Platform URL
 set(Launcher_TRANSLATIONS_URL "https://hosted.weblate.org/projects/freesmlauncher/freesmlauncher-launcher/" CACHE STRING "URL for the translations platform.")
@@ -348,7 +348,7 @@ include(ECMQtDeclareLoggingCategory)
 
 ####################################### Program Info #######################################
 
-set(Launcher_APP_BINARY_NAME "freesmlauncher" CACHE STRING "Name of the Launcher binary")
+set(Launcher_APP_BINARY_NAME "freesmmodlock" CACHE STRING "Name of the Launcher binary")
 add_subdirectory(program_info)
 
 ####################################### Install layout #######################################
@@ -363,6 +363,44 @@ endif()
 if(NOT (UNIX AND APPLE))
     # Install "portable.txt" if selected component is "portable"
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${Launcher_Portable_File}" DESTINATION "." COMPONENT portable EXCLUDE_FROM_ALL)
+endif()
+
+# Build and package the exact ModLock Git submodule commit with the Windows
+# launcher. Players receive both Go executables and do not need Go installed.
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(MODLOCK_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libraries/modlock")
+    if(NOT EXISTS "${MODLOCK_SOURCE_DIR}/go.mod")
+        message(FATAL_ERROR "The ModLock submodule is missing. Configure with recursive Git submodules.")
+    endif()
+    find_program(MODLOCK_GO_EXECUTABLE NAMES go REQUIRED)
+    execute_process(
+        COMMAND git rev-parse HEAD
+        WORKING_DIRECTORY "${MODLOCK_SOURCE_DIR}"
+        OUTPUT_VARIABLE MODLOCK_COMMIT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+    set(MODLOCK_VERSION "${MODLOCK_COMMIT}")
+    set(MODLOCK_OUTPUT_DIR "${PROJECT_BINARY_DIR}/modlock")
+    set(MODLOCK_LOADER "${MODLOCK_OUTPUT_DIR}/modlock.exe")
+    set(MODLOCK_PAYLOAD "${MODLOCK_OUTPUT_DIR}/modlock-app.exe")
+    file(GLOB_RECURSE MODLOCK_GO_SOURCES CONFIGURE_DEPENDS "${MODLOCK_SOURCE_DIR}/*.go")
+    set(MODLOCK_LDFLAGS
+        "-X=modlock/internal/buildinfo.Version=${MODLOCK_VERSION} -X=modlock/internal/buildinfo.Commit=${MODLOCK_COMMIT} -X=modlock/internal/buildinfo.ReleaseRepo=https://github.com/natimys/modlock")
+    add_custom_command(
+        OUTPUT "${MODLOCK_LOADER}" "${MODLOCK_PAYLOAD}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MODLOCK_OUTPUT_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E env GOOS=windows GOARCH=amd64 CGO_ENABLED=0
+                "${MODLOCK_GO_EXECUTABLE}" build -trimpath "-ldflags=${MODLOCK_LDFLAGS}"
+                -o "${MODLOCK_PAYLOAD}" ./cmd/modlock
+        COMMAND ${CMAKE_COMMAND} -E env GOOS=windows GOARCH=amd64 CGO_ENABLED=0
+                "${MODLOCK_GO_EXECUTABLE}" build -trimpath -o "${MODLOCK_LOADER}" ./cmd/launcher
+        WORKING_DIRECTORY "${MODLOCK_SOURCE_DIR}"
+        DEPENDS ${MODLOCK_GO_SOURCES} "${MODLOCK_SOURCE_DIR}/go.mod" "${MODLOCK_SOURCE_DIR}/go.sum"
+        COMMENT "Building pinned ModLock ${MODLOCK_VERSION} payload for Windows x64"
+        VERBATIM
+    )
+    add_custom_target(modlock_payload DEPENDS "${MODLOCK_LOADER}" "${MODLOCK_PAYLOAD}")
 endif()
 
 if(UNIX AND APPLE)
@@ -480,6 +518,10 @@ elseif(WIN32)
     set(JARS_DEST_DIR "jars")
 else()
     message(FATAL_ERROR "Platform not supported")
+endif()
+
+if(TARGET modlock_payload)
+    install(FILES "${MODLOCK_LOADER}" "${MODLOCK_PAYLOAD}" DESTINATION "${BINARY_DEST_DIR}")
 endif()
 
 
