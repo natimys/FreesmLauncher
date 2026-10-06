@@ -175,6 +175,17 @@ void ImportPage::updateState()
             dlUrlDialod.execWithTask(job.get());
             return;
         } else {
+            const auto segments = url.path().split('/', Qt::SkipEmptyParts);
+            const bool gitRepositoryUrl = (url.scheme() == "https" || url.scheme() == "http") &&
+                                          (url.host().compare("github.com", Qt::CaseInsensitive) == 0 ||
+                                           url.host().compare("gitlab.com", Qt::CaseInsensitive) == 0 ||
+                                           url.host().compare("codeberg.org", Qt::CaseInsensitive) == 0) &&
+                                          segments.size() == 2 && !url.path().endsWith(".zip", Qt::CaseInsensitive) &&
+                                          !url.path().endsWith(".tar.gz", Qt::CaseInsensitive);
+            if (gitRepositoryUrl) {
+                dialog->setModLockRepository(input);
+                return;
+            }
             if (input.endsWith("?client=y")) {
                 input.chop(9);
                 input.append("/file");

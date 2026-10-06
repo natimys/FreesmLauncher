@@ -940,6 +940,18 @@ void MainWindow::processURLs(QList<QUrl> urls)
         if (url.scheme().isEmpty())
             url.setScheme("file");
 
+        const auto repositorySegments = url.path().split('/', Qt::SkipEmptyParts);
+        const bool isModLockRepository = (url.scheme() == "https" || url.scheme() == "http") &&
+                                         (url.host().compare("github.com", Qt::CaseInsensitive) == 0 ||
+                                          url.host().compare("gitlab.com", Qt::CaseInsensitive) == 0 ||
+                                          url.host().compare("codeberg.org", Qt::CaseInsensitive) == 0) &&
+                                         repositorySegments.size() == 2 && !url.path().endsWith(".zip", Qt::CaseInsensitive) &&
+                                         !url.path().endsWith(".tar.gz", Qt::CaseInsensitive);
+        if (isModLockRepository) {
+            addInstance(url.toString());
+            continue;
+        }
+
         ModPlatform::IndexedVersion version;
         QMap<QString, QString> extra_info;
         QUrl local_url;

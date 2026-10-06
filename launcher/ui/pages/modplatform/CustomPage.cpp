@@ -41,6 +41,7 @@
 #include "Application.h"
 #include "Filter.h"
 #include "Version.h"
+#include "modlock/ModLockCreationTask.h"
 #include "meta/Index.h"
 #include "meta/VersionList.h"
 #include "minecraft/VanillaInstanceCreationTask.h"
@@ -196,9 +197,15 @@ void CustomPage::suggestCurrent()
     }
 
     // There isn't a selected version if the version list is empty
-    if (ui->loaderVersionList->selectedVersion() == nullptr)
+    const bool hasLoader = ui->loaderVersionList->selectedVersion() != nullptr;
+    if (dialog->hasModLockSource()) {
+        auto* task = new ModLockCreationTask(m_selectedVersion, hasLoader ? m_selectedLoader : QString(),
+                                             hasLoader ? m_selectedLoaderVersion : BaseVersion::Ptr(), dialog->modLockPack(),
+                                             dialog->modLockRevision(), dialog->modLockName(), dialog->modLockVersion());
+        dialog->setSuggestedPack(dialog->modLockName(), dialog->modLockVersion(), task);
+    } else if (!hasLoader) {
         dialog->setSuggestedPack(m_selectedVersion->descriptor(), new VanillaCreationTask(m_selectedVersion));
-    else {
+    } else {
         dialog->setSuggestedPack(m_selectedVersion->descriptor(),
                                  new VanillaCreationTask(m_selectedVersion, m_selectedLoader, m_selectedLoaderVersion));
     }

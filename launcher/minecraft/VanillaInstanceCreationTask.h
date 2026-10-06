@@ -4,7 +4,7 @@
 
 #include <utility>
 
-class VanillaCreationTask final : public InstanceCreationTask {
+class VanillaCreationTask : public InstanceCreationTask {
     Q_OBJECT
    public:
     VanillaCreationTask(BaseVersion::Ptr version) : InstanceCreationTask(), m_version(std::move(version)) {}

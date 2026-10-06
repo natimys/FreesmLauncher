@@ -36,6 +36,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QJsonObject>
 
 #include "InstanceTask.h"
 #include "ui/pages/BasePageProvider.h"
@@ -48,6 +49,7 @@ class PageContainer;
 class QDialogButtonBox;
 class ImportPage;
 class FlamePage;
+class ModLockImportPage;
 
 class NewInstanceDialog : public QDialog, public BasePageProvider {
     Q_OBJECT
@@ -74,6 +76,13 @@ class NewInstanceDialog : public QDialog, public BasePageProvider {
     QString instName() const;
     QString instGroup() const;
     QString iconKey() const;
+    void setModLockSource(QJsonObject pack, QString revision, QString name, QString version);
+    void setModLockRepository(const QString& repository);
+    bool hasModLockSource() const { return !m_modLockPack.isEmpty() && !m_modLockRevision.isEmpty(); }
+    QJsonObject modLockPack() const { return m_modLockPack; }
+    QString modLockRevision() const { return m_modLockRevision; }
+    QString modLockName() const { return m_modLockName; }
+    QString modLockVersion() const { return m_modLockVersion; }
 
    public slots:
     void accept() override;
@@ -91,6 +100,7 @@ class NewInstanceDialog : public QDialog, public BasePageProvider {
 
     QString InstIconKey;
     ImportPage* importPage = nullptr;
+    ModLockImportPage* modLockPage = nullptr;
     std::unique_ptr<InstanceTask> creationTask;
 
     bool importIcon = false;
@@ -100,6 +110,10 @@ class NewInstanceDialog : public QDialog, public BasePageProvider {
     QString importVersion;
 
     QString m_searchTerm;
+    QJsonObject m_modLockPack;
+    QString m_modLockRevision;
+    QString m_modLockName;
+    QString m_modLockVersion;
 
     void importIconNow();
 };

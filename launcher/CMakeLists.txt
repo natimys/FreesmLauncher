@@ -18,6 +18,8 @@ set(CORE_SOURCES
     LoggedProcess.cpp
     modlock/ModLockBridge.h
     modlock/ModLockBridge.cpp
+    modlock/ModLockCreationTask.h
+    modlock/ModLockCreationTask.cpp
     MessageLevel.cpp
     MessageLevel.h
     BaseVersion.h
@@ -1097,6 +1099,8 @@ SET(LAUNCHER_SOURCES
 
     ui/pages/modplatform/ImportPage.cpp
     ui/pages/modplatform/ImportPage.h
+    ui/pages/modplatform/ModLockImportPage.cpp
+    ui/pages/modplatform/ModLockImportPage.h
 
     ui/pages/modplatform/OptionalModDialog.cpp
     ui/pages/modplatform/OptionalModDialog.h

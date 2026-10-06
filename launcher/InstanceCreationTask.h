@@ -34,6 +34,10 @@ class InstanceCreationTask : public InstanceTask {
      */
     virtual std::unique_ptr<MinecraftInstance> createInstance() { return nullptr; }
 
+    // Subclasses may append an asynchronous pack-file install after Minecraft
+    // and loader components have completed. Return true when completion is async.
+    virtual bool runPostInstall() { return false; }
+
     QString getError() const { return m_error_message; }
 
    protected:

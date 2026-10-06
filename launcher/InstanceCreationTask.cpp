@@ -87,7 +87,8 @@ void InstanceCreationTask::executeTask()
 
         auto updateTasks = m_instance->createUpdateTask();
         if (updateTasks.isEmpty()) {
-            emitSucceeded();
+            if (!runPostInstall())
+                emitSucceeded();
             return;
         }
         auto task = makeShared<SequentialTask>();
@@ -97,6 +98,8 @@ void InstanceCreationTask::executeTask()
         }
         connect(task.get(), &Task::finished, this, [this, task] {
             if (task->wasSuccessful() || m_abort) {
+                if (!m_abort && runPostInstall())
+                    return;
                 emitSucceeded();
             } else {
                 emitFailed(tr("Could not download game files: %1").arg(task->failReason()));

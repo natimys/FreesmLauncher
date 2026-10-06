@@ -59,6 +59,7 @@
 
 #include "ui/pages/modplatform/CustomPage.h"
 #include "ui/pages/modplatform/ImportPage.h"
+#include "ui/pages/modplatform/ModLockImportPage.h"
 #include "ui/pages/modplatform/atlauncher/AtlPage.h"
 #include "ui/pages/modplatform/flame/FlamePage.h"
 #include "ui/pages/modplatform/ftb/FtbPage.h"
@@ -128,9 +129,21 @@ NewInstanceDialog::NewInstanceDialog(const QString& initialGroup,
 
     if (!url.isEmpty()) {
         QUrl actualUrl(url);
-        m_container->selectPage("import");
-        importPage->setUrl(url);
-        importPage->setExtraInfo(extra_info);
+        const auto segments = actualUrl.path().split('/', Qt::SkipEmptyParts);
+        const bool repositoryUrl = (actualUrl.scheme() == "https" || actualUrl.scheme() == "http") &&
+                                  (actualUrl.host().compare("github.com", Qt::CaseInsensitive) == 0 ||
+                                   actualUrl.host().compare("gitlab.com", Qt::CaseInsensitive) == 0 ||
+                                   actualUrl.host().compare("codeberg.org", Qt::CaseInsensitive) == 0) &&
+                                  segments.size() == 2 && !actualUrl.path().endsWith(".zip", Qt::CaseInsensitive) &&
+                                  !actualUrl.path().endsWith(".tar.gz", Qt::CaseInsensitive);
+        if (repositoryUrl) {
+            m_container->selectPage("modlock");
+            modLockPage->setRepository(url);
+        } else {
+            m_container->selectPage("import");
+            importPage->setUrl(url);
+            importPage->setExtraInfo(extra_info);
+        }
     }
 
     updateDialogState();
@@ -172,9 +185,11 @@ QList<BasePage*> NewInstanceDialog::getPages()
     QList<BasePage*> pages;
 
     importPage = new ImportPage(this);
+    modLockPage = new ModLockImportPage(this);
 
     pages.append(new CustomPage(this));
     pages.append(importPage);
+    pages.append(modLockPage);
     pages.append(new AtlPage(this));
     if (APPLICATION->capabilities() & Application::SupportsFlame)
         pages.append(new FlamePage(this));
@@ -292,6 +307,20 @@ QString NewInstanceDialog::instGroup() const
 QString NewInstanceDialog::iconKey() const
 {
     return InstIconKey;
+}
+
+void NewInstanceDialog::setModLockSource(QJsonObject pack, QString revision, QString name, QString version)
+{
+    m_modLockPack = std::move(pack);
+    m_modLockRevision = std::move(revision);
+    m_modLockName = std::move(name);
+    m_modLockVersion = std::move(version);
+}
+
+void NewInstanceDialog::setModLockRepository(const QString& repository)
+{
+    m_container->selectPage("modlock");
+    modLockPage->setRepository(repository);
 }
 
 void NewInstanceDialog::on_iconButton_clicked()
