@@ -21,6 +21,8 @@ struct PackEditorAuthorState {
 // aggregate status used by older Core bridge responses.
 QString packEditorStatusSummary(const QJsonObject& entry);
 bool packEditorIsAuthorMode(const QString& managedPackType, bool hasAuthorConfig);
+bool modLockImportSchemaSupported(int schema);
+QJsonObject packEditorSetModTargetsParams(const QString& id, const QJsonArray& targets);
 
 // A target-specific projection over one authoritative author-state list. A
 // shared entry stays singular in bridge state and is exposed by both models.

@@ -353,6 +353,10 @@ void PackEditorPage::runOperation(const QString& operation,
 {
     if (m_bridge || !m_minecraftInstance)
         return;
+    if (operation != QStringLiteral("publish-preview") && operation != QStringLiteral("publish")) {
+        m_previewId.clear();
+        m_publishButton->setEnabled(false);
+    }
     m_operation = operation;
     m_result = {};
     m_error = {};
@@ -381,8 +385,14 @@ void PackEditorPage::onOperationFinished()
     setBusy(false);
     if (!m_error.isEmpty()) {
         m_onSuccess = {};
+        const auto errorDetails = m_error.value("details").toObject();
+        const QString conflictKind = m_error.value("kind").toString(errorDetails.value("kind").toString());
+        if (m_operation == QStringLiteral("publish") && conflictKind == QStringLiteral("changed_during_apply")) {
+            m_previewId.clear();
+            m_publishButton->setEnabled(false);
+        }
         if (m_operation == QStringLiteral("publish") && m_error.value("code").toString() == QStringLiteral("push_failed")) {
-            const auto details = m_error.value("details").toObject();
+            const auto details = errorDetails;
             const auto commit = details.value("commit").toString();
             const auto branch = details.value("branch").toString();
             QString message = tr("The local commit was created, but pushing it to the remote did not complete. No automatic retry was attempted.");
@@ -498,7 +508,8 @@ void PackEditorPage::setSelectedTargets(const QJsonArray& targets)
 {
     const auto mod = selectedMod();
     if (mod.isEmpty()) return;
-    runOperation("set-mod-targets", {{"id", mod.value("id")}, {"targets", targets}}, [this](const QJsonObject&) { loadAuthorState(); });
+    runOperation("set-mod-targets", packEditorSetModTargetsParams(mod.value("id").toString(), targets),
+                 [this](const QJsonObject&) { loadAuthorState(); });
 }
 
 void PackEditorPage::setSelectedResourceState(const QString& state)

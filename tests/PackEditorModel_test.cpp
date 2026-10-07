@@ -20,6 +20,8 @@ class PackEditorModelTest : public QObject {
     void targetRootsAreDerivedFromLauncherPaths();
     void targetStatesDriveStatusSummary();
     void authorModeVisibilityRequiresAuthorConfig();
+    void schemaOneAndTwoImportsRemainSupported();
+    void targetMutationUsesFrozenBridgeDto();
 };
 
 void PackEditorModelTest::groupsSchemaThreeTargets()
@@ -119,6 +121,23 @@ void PackEditorModelTest::authorModeVisibilityRequiresAuthorConfig()
     QVERIFY(packEditorIsAuthorMode(QStringLiteral("modlock"), true));
     QVERIFY(!packEditorIsAuthorMode(QStringLiteral("modlock"), false));
     QVERIFY(!packEditorIsAuthorMode(QStringLiteral("modrinth"), true));
+}
+
+void PackEditorModelTest::schemaOneAndTwoImportsRemainSupported()
+{
+    QVERIFY(modLockImportSchemaSupported(1));
+    QVERIFY(modLockImportSchemaSupported(2));
+    QVERIFY(modLockImportSchemaSupported(3));
+    QVERIFY(!modLockImportSchemaSupported(0));
+    QVERIFY(!modLockImportSchemaSupported(4));
+}
+
+void PackEditorModelTest::targetMutationUsesFrozenBridgeDto()
+{
+    const auto params = packEditorSetModTargetsParams(QStringLiteral("modrinth:create"), QJsonArray{"server"});
+    QCOMPARE(params.keys(), QStringList({QStringLiteral("id"), QStringLiteral("targets")}));
+    QCOMPARE(params.value("id").toString(), QStringLiteral("modrinth:create"));
+    QCOMPARE(params.value("targets").toArray(), QJsonArray{"server"});
 }
 
 QTEST_GUILESS_MAIN(PackEditorModelTest)

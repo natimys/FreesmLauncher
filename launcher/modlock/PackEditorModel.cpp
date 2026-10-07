@@ -22,6 +22,16 @@ bool packEditorIsAuthorMode(const QString& managedPackType, bool hasAuthorConfig
     return managedPackType == QStringLiteral("modlock") && hasAuthorConfig;
 }
 
+bool modLockImportSchemaSupported(int schema)
+{
+    return schema == 1 || schema == 2 || schema == 3;
+}
+
+QJsonObject packEditorSetModTargetsParams(const QString& id, const QJsonArray& targets)
+{
+    return {{"id", id}, {"targets", targets}};
+}
+
 bool PackEditorAuthorState::parse(const QJsonObject& result, PackEditorAuthorState* state, QString* error)
 {
     const auto fail = [error](const QString& message) {

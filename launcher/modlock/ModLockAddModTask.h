@@ -38,4 +38,5 @@ class ModLockAddModTask final : public Task {
     QString m_bridgeError;
     bool m_bridgeFailed = false;
     bool m_cancelRequested = false;
+    bool m_stageOwned = false;
 };

@@ -3,6 +3,7 @@
 
 #include "modlock/ModLockBridge.h"
 #include "modlock/ModLockCreationTask.h"
+#include "modlock/PackEditorModel.h"
 #include "Application.h"
 #include "Version.h"
 #include "meta/Index.h"
@@ -102,7 +103,7 @@ void ModLockImportPage::preview()
             return;
         }
         const int schema = lock.value("schema").toInt(1);
-        if (schema != 1 && schema != 2 && schema != 3) {
+        if (!modLockImportSchemaSupported(schema)) {
             m_status->setText(tr("This ModLock schema is not supported by this launcher."));
             m_preview->setEnabled(true);
             return;

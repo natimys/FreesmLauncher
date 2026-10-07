@@ -24,12 +24,34 @@ void ModLockAddModTask::executeTask()
     m_stageDirectory = QDir(m_gameRoot).filePath(QStringLiteral(".modlock/staging"));
     const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_stagedPath = QDir(m_stageDirectory).filePath(requestId + QStringLiteral(".stage"));
+    const QFileInfo modLockDirectory(QDir(m_gameRoot).filePath(QStringLiteral(".modlock")));
+    if (modLockDirectory.exists() && (!modLockDirectory.isDir() || modLockDirectory.isSymLink())) {
+        cleanupStage();
+        emitFailed(tr("The ModLock metadata directory is not a safe regular directory."));
+        return;
+    }
     if (m_gameRoot.isEmpty() || m_targets.isEmpty() || m_targetRoots.isEmpty() || m_mod.value("url").toString().isEmpty() ||
         m_mod.value("filename").toString().isEmpty() || !QDir().mkpath(m_stageDirectory)) {
         cleanupStage();
         emitFailed(tr("Could not prepare a ModLock staging download."));
         return;
     }
+    const QFileInfo stagingInfo(m_stageDirectory);
+    const QString canonicalRoot = QFileInfo(m_gameRoot).canonicalFilePath();
+    const QString canonicalStaging = stagingInfo.canonicalFilePath();
+    QString canonicalRootPrefix = canonicalRoot + QDir::separator();
+#ifdef Q_OS_WIN
+    constexpr Qt::CaseSensitivity pathCase = Qt::CaseInsensitive;
+#else
+    constexpr Qt::CaseSensitivity pathCase = Qt::CaseSensitive;
+#endif
+    if (!stagingInfo.isDir() || stagingInfo.isSymLink() || canonicalRoot.isEmpty() || canonicalStaging.isEmpty() ||
+        !canonicalStaging.startsWith(canonicalRootPrefix, pathCase) || QFileInfo::exists(m_stagedPath)) {
+        cleanupStage();
+        emitFailed(tr("The ModLock staging path is not safely contained in the instance."));
+        return;
+    }
+    m_stageOwned = true;
 
     setAbortable(true);
     setStatus(tr("Staging mod for ModLock"));
@@ -129,8 +151,7 @@ void ModLockAddModTask::onBridgeFinished()
 
 void ModLockAddModTask::cleanupStage()
 {
-    if (!m_stagedPath.isEmpty())
+    if (m_stageOwned && !m_stagedPath.isEmpty())
         QFile::remove(m_stagedPath);
-    if (!m_stageDirectory.isEmpty())
-        QDir().rmdir(m_stageDirectory);
+    m_stageOwned = false;
 }
