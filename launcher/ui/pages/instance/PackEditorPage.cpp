@@ -381,6 +381,21 @@ void PackEditorPage::onOperationFinished()
     setBusy(false);
     if (!m_error.isEmpty()) {
         m_onSuccess = {};
+        if (m_operation == QStringLiteral("publish") && m_error.value("code").toString() == QStringLiteral("push_failed")) {
+            const auto details = m_error.value("details").toObject();
+            const auto commit = details.value("commit").toString();
+            const auto branch = details.value("branch").toString();
+            QString message = tr("The local commit was created, but pushing it to the remote did not complete. No automatic retry was attempted.");
+            if (!commit.isEmpty())
+                message += tr("\nCommit: %1").arg(commit);
+            if (!branch.isEmpty())
+                message += tr("\nBranch: %1").arg(branch);
+            m_previewId.clear();
+            m_publishButton->setEnabled(false);
+            showStatusMessage(message, true);
+            loadAuthorState();
+            return;
+        }
         showStatusMessage(m_error.value("message").toString(tr("ModLock operation failed.")), true);
         return;
     }
@@ -534,7 +549,8 @@ void PackEditorPage::addSelectedMod(ModPlatform::IndexedVersion version, ModPlat
                                {"mod_id", projectId},
                                {"file_id", version.fileId.toString()},
                                {"url", version.downloadUrl}};
-    auto* task = new ModLockAddModTask(m_minecraftInstance->gameRoot(), metadata, toTargets(targets), this);
+    auto* task = new ModLockAddModTask(m_minecraftInstance->gameRoot(), metadata, toTargets(targets),
+                                      modLockTargetRoots(m_minecraftInstance->gameRoot(), m_minecraftInstance->instanceRoot()), this);
     ProgressDialog progress(this);
     progress.setSkipButton(true, tr("Cancel"));
     const auto result = progress.execWithTask(task);

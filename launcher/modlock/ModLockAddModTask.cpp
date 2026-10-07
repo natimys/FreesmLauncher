@@ -12,19 +12,19 @@
 #include "net/ApiDownload.h"
 #include "net/NetJob.h"
 
-ModLockAddModTask::ModLockAddModTask(QString gameRoot, QJsonObject mod, QJsonArray targets, QObject* parent)
-    : Task(false), m_gameRoot(QDir(std::move(gameRoot)).absolutePath()), m_mod(std::move(mod)), m_targets(std::move(targets))
+ModLockAddModTask::ModLockAddModTask(QString gameRoot, QJsonObject mod, QJsonArray targets, QJsonObject targetRoots, QObject* parent)
+    : Task(false), m_gameRoot(QDir(std::move(gameRoot)).absolutePath()), m_mod(std::move(mod)), m_targets(std::move(targets)),
+      m_targetRoots(std::move(targetRoots))
 {
     setParent(parent);
 }
 
 void ModLockAddModTask::executeTask()
 {
-    const QString stagingRoot = QDir(m_gameRoot).filePath(QStringLiteral(".modlock/staging"));
+    m_stageDirectory = QDir(m_gameRoot).filePath(QStringLiteral(".modlock/staging"));
     const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    m_stageDirectory = QDir(stagingRoot).filePath(requestId);
-    m_stagedPath = QDir(m_stageDirectory).filePath(QStringLiteral("download.bin"));
-    if (m_gameRoot.isEmpty() || m_targets.isEmpty() || m_mod.value("url").toString().isEmpty() ||
+    m_stagedPath = QDir(m_stageDirectory).filePath(requestId + QStringLiteral(".stage"));
+    if (m_gameRoot.isEmpty() || m_targets.isEmpty() || m_targetRoots.isEmpty() || m_mod.value("url").toString().isEmpty() ||
         m_mod.value("filename").toString().isEmpty() || !QDir().mkpath(m_stageDirectory)) {
         cleanupStage();
         emitFailed(tr("Could not prepare a ModLock staging download."));
@@ -89,7 +89,7 @@ void ModLockAddModTask::onDownloadSucceeded()
         m_cancelRequested = error.value("code").toString() == "cancelled";
     });
     connect(m_bridge, &ModLockBridge::finished, this, &ModLockAddModTask::onBridgeFinished);
-    const QJsonObject params{{"mod", m_mod}, {"targets", m_targets}, {"staged_file", relativePath}};
+    const QJsonObject params{{"mod", m_mod}, {"targets", m_targets}, {"staged_file", relativePath}, {"target_roots", m_targetRoots}};
     if (!m_bridge->start("add-mod", params)) {
         m_bridge->deleteLater();
         m_bridge = nullptr;

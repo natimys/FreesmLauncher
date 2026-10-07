@@ -14,7 +14,7 @@ class ModLockAddModTask final : public Task {
     Q_OBJECT
 
    public:
-    ModLockAddModTask(QString gameRoot, QJsonObject mod, QJsonArray targets, QObject* parent = nullptr);
+    ModLockAddModTask(QString gameRoot, QJsonObject mod, QJsonArray targets, QJsonObject targetRoots, QObject* parent = nullptr);
     bool canAbort() const override { return true; }
     bool abort() override;
 
@@ -32,6 +32,7 @@ class ModLockAddModTask final : public Task {
     QString m_stagedPath;
     QJsonObject m_mod;
     QJsonArray m_targets;
+    QJsonObject m_targetRoots;
     QPointer<NetJob> m_download;
     QPointer<ModLockBridge> m_bridge;
     QString m_bridgeError;
