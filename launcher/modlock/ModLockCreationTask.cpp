@@ -4,6 +4,8 @@
 #include "BaseInstance.h"
 #include "ModLockBridge.h"
 
+#include <QDir>
+
 ModLockCreationTask::ModLockCreationTask(BaseVersion::Ptr version,
                                          QString loader,
                                          BaseVersion::Ptr loaderVersion,
@@ -34,6 +36,7 @@ std::unique_ptr<MinecraftInstance> ModLockCreationTask::createInstance()
 {
     auto instance = VanillaCreationTask::createInstance();
     if (instance) {
+        m_minecraftRoot = instance->gameRoot();
         instance->setManagedPack("modlock", m_pack.value("repository").toString(), m_packName, m_revision, m_packVersion);
         instance->settings()->set("ManagedPackURL", m_pack.value("repository").toString());
         instance->settings()->set("ModLockBranch", m_pack.value("branch").toString());
@@ -44,7 +47,12 @@ std::unique_ptr<MinecraftInstance> ModLockCreationTask::createInstance()
 
 bool ModLockCreationTask::runPostInstall()
 {
-    m_bridge = std::make_unique<ModLockBridge>(m_stagingPath);
+    if (m_minecraftRoot.isEmpty() || !QDir().mkpath(m_minecraftRoot)) {
+        emitFailed(tr("Could not prepare the Minecraft directory for ModLock files."));
+        return true;
+    }
+
+    m_bridge = std::make_unique<ModLockBridge>(m_minecraftRoot);
     connect(m_bridge.get(), &ModLockBridge::progress, this, [this](const QString&, const QString& message) { setStatus(message); });
     connect(m_bridge.get(), &ModLockBridge::completed, this, [this](const QString&, const QJsonObject&) {
         setAbortable(false);

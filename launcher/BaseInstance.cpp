@@ -132,6 +132,8 @@ BaseInstance::BaseInstance(SettingsObject* globalSettings, std::unique_ptr<Setti
     m_settings->registerSetting("ManagedPackName", "");
     m_settings->registerSetting("ManagedPackVersionID", "");
     m_settings->registerSetting("ManagedPackVersionName", "");
+    m_settings->registerSetting("ModLockBranch", "main");
+    m_settings->registerSetting("ModLockLockPath", "mod.lock");
     m_settings->registerSetting("ManagedPackURL", "");
 
     m_settings->registerSetting("Profiler", "");
@@ -209,6 +211,8 @@ void BaseInstance::copyManagedPack(BaseInstance& other)
     m_settings->set("ManagedPackName", other.getManagedPackName());
     m_settings->set("ManagedPackVersionID", other.getManagedPackVersionID());
     m_settings->set("ManagedPackVersionName", other.getManagedPackVersionName());
+    m_settings->set("ModLockBranch", other.settings()->get("ModLockBranch"));
+    m_settings->set("ModLockLockPath", other.settings()->get("ModLockLockPath"));
 
     if (APPLICATION->settings()->get("AutomaticJavaSwitch").toBool() && m_settings->get("AutomaticJava").toBool() &&
         m_settings->get("OverrideJavaLocation").toBool()) {
