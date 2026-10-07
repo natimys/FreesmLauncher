@@ -18,6 +18,8 @@ class PackEditorModelTest : public QObject {
     void keepsLegacyEntriesClientOnly();
     void conflictKindsDriveConfirmation();
     void targetRootsAreDerivedFromLauncherPaths();
+    void targetStatesDriveStatusSummary();
+    void authorModeVisibilityRequiresAuthorConfig();
 };
 
 void PackEditorModelTest::groupsSchemaThreeTargets()
@@ -99,6 +101,24 @@ void PackEditorModelTest::targetRootsAreDerivedFromLauncherPaths()
     const auto roots = modLockTargetRoots(QStringLiteral("C:/instances/pack/minecraft"), QStringLiteral("C:/instances/pack"));
     QCOMPARE(QDir::cleanPath(roots.value("client").toString()), QStringLiteral("C:/instances/pack/minecraft"));
     QCOMPARE(QDir::cleanPath(roots.value("server").toString()), QStringLiteral("C:/instances/pack/server"));
+}
+
+void PackEditorModelTest::targetStatesDriveStatusSummary()
+{
+    const QJsonObject resource{
+        {"status", "conflict"},
+        {"target_states", QJsonArray{QJsonObject{{"target_id", "client"}, {"status", "synced"}},
+                                     QJsonObject{{"target_id", "server"}, {"status", "modified"}, {"message", "local edit"}}}},
+    };
+    QCOMPARE(packEditorStatusSummary(resource), QStringLiteral("client: synced; server: modified"));
+    QCOMPARE(packEditorStatusSummary(QJsonObject{{"status", "missing"}}), QStringLiteral("missing"));
+}
+
+void PackEditorModelTest::authorModeVisibilityRequiresAuthorConfig()
+{
+    QVERIFY(packEditorIsAuthorMode(QStringLiteral("modlock"), true));
+    QVERIFY(!packEditorIsAuthorMode(QStringLiteral("modlock"), false));
+    QVERIFY(!packEditorIsAuthorMode(QStringLiteral("modrinth"), true));
 }
 
 QTEST_GUILESS_MAIN(PackEditorModelTest)

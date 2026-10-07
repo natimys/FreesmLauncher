@@ -2,6 +2,25 @@
 #include "PackEditorModel.h"
 
 #include <QJsonValue>
+#include <QStringList>
+
+QString packEditorStatusSummary(const QJsonObject& entry)
+{
+    QStringList statuses;
+    for (const auto& value : entry.value("target_states").toArray()) {
+        const auto targetState = value.toObject();
+        const auto target = targetState.value("target_id").toString();
+        const auto status = targetState.value("status").toString();
+        if (!target.isEmpty() && !status.isEmpty())
+            statuses.append(QStringLiteral("%1: %2").arg(target, status));
+    }
+    return statuses.isEmpty() ? entry.value("status").toString() : statuses.join(QStringLiteral("; "));
+}
+
+bool packEditorIsAuthorMode(const QString& managedPackType, bool hasAuthorConfig)
+{
+    return managedPackType == QStringLiteral("modlock") && hasAuthorConfig;
+}
 
 bool PackEditorAuthorState::parse(const QJsonObject& result, PackEditorAuthorState* state, QString* error)
 {

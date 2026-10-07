@@ -17,6 +17,11 @@ struct PackEditorAuthorState {
     static bool parse(const QJsonObject& result, PackEditorAuthorState* state, QString* error = nullptr);
 };
 
+// Compact per-target status text for details/table views. Falls back to the
+// aggregate status used by older Core bridge responses.
+QString packEditorStatusSummary(const QJsonObject& entry);
+bool packEditorIsAuthorMode(const QString& managedPackType, bool hasAuthorConfig);
+
 // A target-specific projection over one authoritative author-state list. A
 // shared entry stays singular in bridge state and is exposed by both models.
 class PackEditorTargetModel final : public QAbstractListModel {

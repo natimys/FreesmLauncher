@@ -10,6 +10,7 @@
 #include "ui/pages/instance/ModFolderPage.h"
 #include "ui/pages/instance/NotesPage.h"
 #include "ui/pages/instance/OtherLogsPage.h"
+#include "ui/pages/instance/PackEditorPage.h"
 #include "ui/pages/instance/ResourcePackPage.h"
 #include "ui/pages/instance/ScreenshotsPage.h"
 #include "ui/pages/instance/ServersPage.h"
@@ -31,6 +32,7 @@ class InstancePageProvider : protected QObject, public BasePageProvider {
         MinecraftInstance* onesix = dynamic_cast<MinecraftInstance*>(inst);
         values.append(new VersionPage(onesix));
         values.append(ManagedPackPage::createPage(onesix));
+        values.append(new PackEditorPage(onesix));
         auto modsPage = new ModFolderPage(onesix, onesix->loaderModList());
         modsPage->setFilter("%1 (*.zip *.jar *.litemod *.nilmod)");
         values.append(modsPage);

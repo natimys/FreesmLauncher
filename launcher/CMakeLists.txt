@@ -18,6 +18,8 @@ set(CORE_SOURCES
     LoggedProcess.cpp
     modlock/ModLockBridge.h
     modlock/ModLockBridge.cpp
+    modlock/ModLockAddModTask.h
+    modlock/ModLockAddModTask.cpp
     modlock/PackEditorModel.h
     modlock/PackEditorModel.cpp
     modlock/ModLockCreationTask.h
@@ -976,6 +978,8 @@ SET(LAUNCHER_SOURCES
     ui/pages/instance/VersionPage.h
     ui/pages/instance/ManagedPackPage.cpp
     ui/pages/instance/ManagedPackPage.h
+    ui/pages/instance/PackEditorPage.cpp
+    ui/pages/instance/PackEditorPage.h
     ui/pages/instance/DataPackPage.h
     ui/pages/instance/DataPackPage.cpp
     ui/pages/instance/TexturePackPage.h
