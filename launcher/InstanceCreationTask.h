@@ -38,6 +38,10 @@ class InstanceCreationTask : public InstanceTask {
     // and loader components have completed. Return true when completion is async.
     virtual bool runPostInstall() { return false; }
 
+    // Most instance creation flows let users skip Minecraft downloads. Some
+    // integrations require the game files before post-install can succeed.
+    virtual bool abortCancelsMinecraftDownload() const { return false; }
+
     QString getError() const { return m_error_message; }
 
    protected:

@@ -20,8 +20,8 @@ ModLockBridge::ModLockBridge(QString root, QObject* parent) : QObject(parent), m
     connect(&m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
             fail("component_unavailable", m_process.errorString());
-            emit finished();
             m_finishedEmitted = true;
+            emit finished();
         }
     });
 }
@@ -57,7 +57,7 @@ bool ModLockBridge::cancel()
 
 bool ModLockBridge::isActive() const
 {
-    return m_process.state() != QProcess::NotRunning && !m_terminalEventReceived;
+    return m_started && !m_finishedEmitted;
 }
 
 void ModLockBridge::sendRequest()

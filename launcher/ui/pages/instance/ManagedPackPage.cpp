@@ -14,7 +14,9 @@
 
 #include <QFileDialog>
 #include <QListView>
+#include <QMessageBox>
 #include <QProxyStyle>
+#include <QPushButton>
 #include <QStyleFactory>
 #include <memory>
 
@@ -550,6 +552,25 @@ void ModLockManagedPackPage::setBusy(bool busy, const QString& status)
         ui->changelogTextBrowser->setPlainText(status);
 }
 
+bool ModLockManagedPackPage::prepareToClose()
+{
+    if (!m_bridge || !m_bridge->isActive())
+        return true;
+
+    QMessageBox box(QMessageBox::Warning, tr("ModLock operation is running"),
+                    tr("Wait for the ModLock check or file update to finish, or send a cooperative cancellation. The window will stay open until the process exits."),
+                    QMessageBox::NoButton, m_instance_window);
+    auto* wait = box.addButton(tr("Wait"), QMessageBox::RejectRole);
+    auto* cancel = box.addButton(tr("Cancel operation"), QMessageBox::DestructiveRole);
+    box.setDefaultButton(qobject_cast<QPushButton*>(wait));
+    box.exec();
+    if (box.clickedButton() == cancel) {
+        if (m_bridge->cancel())
+            setBusy(true, tr("Waiting for ModLock to finish safely..."));
+    }
+    return false;
+}
+
 void ModLockManagedPackPage::update()
 {
     if (!m_previewRevision.isEmpty()) {
@@ -564,40 +585,21 @@ void ModLockManagedPackPage::update()
     }
 
     m_previewRevision.clear();
+    m_operation = "check";
+    m_result = {};
+    m_error = {};
     setBusy(true, tr("Checking the ModLock source..."));
     m_bridge = new ModLockBridge(m_inst->gameRoot(), this);
     connect(m_bridge, &ModLockBridge::progress, this, [this](const QString&, const QString& message) {
         ui->changelogTextBrowser->setPlainText(message);
     });
     connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) {
-        m_previewRevision = result.value("revision").toString();
-        const QJsonObject diff = result.value("diff").toObject();
-        const QString diffText = QString::fromUtf8(QJsonDocument(diff).toJson(QJsonDocument::Indented));
-        if (!m_previewRevision.isEmpty() && m_previewRevision == m_inst->getManagedPackVersionID()) {
-            ui->changelogTextBrowser->setPlainText(tr("This instance is already at the latest checked revision: %1").arg(m_previewRevision));
-            ui->updateButton->setText(tr("Check for updates"));
-            ui->updateButton->setEnabled(!m_inst->isRunning());
-            m_previewRevision.clear();
-        } else {
-            ui->changelogTextBrowser->setPlainText(tr("Preview revision: %1\n\n%2").arg(m_previewRevision, diffText));
-            ui->updateButton->setText(tr("Apply previewed update"));
-            ui->updateButton->setEnabled(!m_previewRevision.isEmpty() && !m_inst->isRunning());
-        }
-        m_busy = false;
+        m_result = result;
     });
     connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) {
-        const QString message = error.value("message").toString(tr("ModLock could not complete the request."));
-        setBusy(false, tr("ModLock error: %1").arg(message).toHtmlEscaped());
-        CustomMessageBox::selectable(this, tr("ModLock update error"), message, QMessageBox::Critical)->show();
+        m_error = error;
     });
-    connect(m_bridge, &ModLockBridge::finished, this, [this] {
-        if (m_busy)
-            setBusy(false);
-        if (m_bridge) {
-            m_bridge->deleteLater();
-            m_bridge = nullptr;
-        }
-    });
+    connect(m_bridge, &ModLockBridge::finished, this, &ModLockManagedPackPage::onBridgeFinished);
     if (!m_bridge->start("check")) {
         setBusy(false, tr("Could not start the ModLock component."));
         m_bridge->deleteLater();
@@ -610,6 +612,9 @@ void ModLockManagedPackPage::applyPreview()
     if (m_previewRevision.isEmpty() || m_busy || m_inst->isRunning())
         return;
     m_busy = true;
+    m_operation = "apply";
+    m_result = {};
+    m_error = {};
     ui->updateButton->setEnabled(false);
     ui->changelogTextBrowser->setPlainText(tr("Applying the previewed revision %1...").arg(m_previewRevision));
     m_bridge = new ModLockBridge(m_inst->gameRoot(), this);
@@ -617,32 +622,69 @@ void ModLockManagedPackPage::applyPreview()
         ui->changelogTextBrowser->setPlainText(message);
     });
     connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) {
-        const QString revision = result.value("revision").toString();
-        if (!revision.isEmpty()) {
-            m_inst->settings()->set("ManagedPackVersionID", revision);
-            m_inst->settings()->set("ManagedPackVersionName", revision.left(12));
-            ui->packVersion->setText(revision.left(12));
-        }
-        m_previewRevision.clear();
-        ui->updateButton->setText(tr("Check for updates"));
-        setBusy(false, tr("ModLock update applied successfully. Installed revision: %1").arg(revision).toHtmlEscaped());
+        m_result = result;
     });
     connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) {
-        const QString message = error.value("message").toString(tr("ModLock could not apply the update."));
-        setBusy(false, tr("ModLock error: %1").arg(message).toHtmlEscaped());
-        CustomMessageBox::selectable(this, tr("ModLock update error"), message, QMessageBox::Critical)->show();
+        m_error = error;
     });
-    connect(m_bridge, &ModLockBridge::finished, this, [this] {
-        if (m_bridge) {
-            m_bridge->deleteLater();
-            m_bridge = nullptr;
-        }
-    });
+    connect(m_bridge, &ModLockBridge::finished, this, &ModLockManagedPackPage::onBridgeFinished);
     if (!m_bridge->start("apply", {{"revision", m_previewRevision}})) {
         setBusy(false, tr("Could not start the ModLock component."));
         m_bridge->deleteLater();
         m_bridge = nullptr;
     }
+}
+
+void ModLockManagedPackPage::onBridgeFinished()
+{
+    if (m_bridge) {
+        m_bridge->deleteLater();
+        m_bridge = nullptr;
+    }
+    if (!m_error.isEmpty()) {
+        const QString code = m_error.value("code").toString();
+        const QString message = m_error.value("message").toString(tr("ModLock could not complete the request."));
+        if (code == "cancelled") {
+            setBusy(false, tr("ModLock operation cancelled."));
+        } else {
+            setBusy(false, tr("ModLock error: %1").arg(message).toHtmlEscaped());
+            const bool recovery = code == "recovery_failed";
+            CustomMessageBox::selectable(this, recovery ? tr("ModLock recovery failed") : tr("ModLock update error"),
+                                         message, QMessageBox::Critical)->show();
+        }
+        return;
+    }
+
+    if (m_operation == "check") {
+        m_previewRevision = m_result.value("revision").toString();
+        const QJsonObject local = m_result.value("local_installation").toObject();
+        const bool needsRecovery = local.value("needs_recovery").toBool();
+        const QString diffText = QString::fromUtf8(QJsonDocument(m_result.value("diff").toObject()).toJson(QJsonDocument::Indented));
+        if (!m_previewRevision.isEmpty() && m_previewRevision == m_inst->getManagedPackVersionID() && !needsRecovery) {
+            ui->changelogTextBrowser->setPlainText(tr("This instance is at the checked revision and its managed files are present: %1")
+                                                       .arg(m_previewRevision));
+            ui->updateButton->setText(tr("Check for updates"));
+            setBusy(false);
+            m_previewRevision.clear();
+        } else {
+            const QString state = needsRecovery ? tr("\nManaged files are missing or damaged and will be restored.") : QString();
+            ui->changelogTextBrowser->setPlainText(tr("Preview revision: %1%2\n\n%3").arg(m_previewRevision, state, diffText));
+            ui->updateButton->setText(needsRecovery ? tr("Restore / apply preview") : tr("Apply previewed update"));
+            setBusy(false);
+            ui->updateButton->setEnabled(!m_previewRevision.isEmpty() && !m_inst->isRunning());
+        }
+        return;
+    }
+
+    const QString revision = m_result.value("revision").toString();
+    if (!revision.isEmpty()) {
+        m_inst->settings()->set("ManagedPackVersionID", revision);
+        m_inst->settings()->set("ManagedPackVersionName", revision.left(12));
+        ui->packVersion->setText(revision.left(12));
+    }
+    m_previewRevision.clear();
+    ui->updateButton->setText(tr("Check for updates"));
+    setBusy(false, tr("ModLock update applied successfully. Installed revision: %1").arg(revision).toHtmlEscaped());
 }
 
 void ManagedPackPage::updatePack(const QUrl& url, bool trusted, QString versionID, QString versionName)

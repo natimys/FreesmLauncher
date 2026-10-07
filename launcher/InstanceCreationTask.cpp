@@ -97,7 +97,9 @@ void InstanceCreationTask::executeTask()
             task->addTask(t);
         }
         connect(task.get(), &Task::finished, this, [this, task] {
-            if (task->wasSuccessful() || m_abort) {
+            if (m_abort && abortCancelsMinecraftDownload()) {
+                emitAborted();
+            } else if (task->wasSuccessful() || m_abort) {
                 if (!m_abort && runPostInstall())
                     return;
                 emitSucceeded();

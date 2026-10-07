@@ -21,13 +21,16 @@ class ModLockUpdate final : public LaunchStep {
    private:
     void check();
     void apply(const QString& revision);
+    void verifyAfterNetworkFailure(const QJsonObject& error);
     void onBridgeFinished();
     void showCheckError(const QJsonObject& error);
+    void showOfflineChoice();
 
     ModLockBridge* m_bridge = nullptr;
     QString m_operation;
     QString m_revision;
     QJsonObject m_result;
     QJsonObject m_error;
+    QJsonObject m_networkError;
     bool m_abortRequested = false;
 };

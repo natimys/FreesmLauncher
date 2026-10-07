@@ -184,12 +184,8 @@ void InstanceWindow::runningStateChanged(bool running)
 
 void InstanceWindow::closeEvent(QCloseEvent* event)
 {
-    bool proceed = true;
-    if (!m_doNotSave) {
-        proceed &= m_container->prepareToClose();
-    }
-
-    if (!proceed) {
+    if (!m_container->prepareToClose(!m_doNotSave)) {
+        event->ignore();
         return;
     }
 

@@ -58,6 +58,21 @@ int main()
         return 0;
     }
 
+    if (operation == "delayed-cancel-test") {
+        std::string cancel;
+        if (!std::getline(std::cin, cancel) || value(cancel, "type") != "cancel")
+            return 3;
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        writeFragmented("{\"protocol\":1,\"type\":\"result\",\"id\":\"" + id + "\",\"error\":{\"code\":\"cancelled\",\"message\":\"cancelled cooperatively\"}}\n");
+        return 0;
+    }
+
+    if (operation == "terminal-delay-test") {
+        writeFragmented("{\"protocol\":1,\"type\":\"result\",\"id\":\"" + id + "\",\"result\":{\"ok\":true}}\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        return 0;
+    }
+
     writeFragmented("{\"protocol\":1,\"type\":\"result\",\"id\":\"" + id + "\",\"result\":{\"ok\":true}}\n");
     return 0;
 }

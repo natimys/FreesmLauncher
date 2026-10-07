@@ -15,6 +15,8 @@ class ModLockBridgeTest : public QObject {
     void rejectsIncompatiblePayload();
     void parsesFragmentedProgressAndResult();
     void cancellationIsCooperative();
+    void cancellationKeepsProcessUntilExit();
+    void terminalResultStillKeepsProcessActive();
     void preservesStructuredErrors();
     void diagnosticsStayOnStderrChannel();
 };
@@ -84,6 +86,47 @@ void ModLockBridgeTest::cancellationIsCooperative()
     QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
     QCOMPARE(failed.count(), 1);
     QCOMPARE(failed.front().at(1).toJsonObject().value("code").toString(), QStringLiteral("cancelled"));
+}
+
+void ModLockBridgeTest::cancellationKeepsProcessUntilExit()
+{
+    auto root = makeBridgeRoot();
+    QVERIFY(root.isValid());
+    ModLockBridge bridge(root.path());
+    QSignalSpy finished(&bridge, &ModLockBridge::finished);
+    bool observedRunningAfterCancel = false;
+    connect(&bridge, &ModLockBridge::progress, &bridge, [&bridge, &finished, &observedRunningAfterCancel](const QString&, const QString&) {
+        QVERIFY(bridge.cancel());
+        observedRunningAfterCancel = bridge.isActive();
+        QCOMPARE(finished.count(), 0);
+        QVERIFY(!bridge.start("scan"));
+    });
+
+    QVERIFY(bridge.start("delayed-cancel-test"));
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+    QVERIFY(observedRunningAfterCancel);
+    QVERIFY(!bridge.isActive());
+}
+
+void ModLockBridgeTest::terminalResultStillKeepsProcessActive()
+{
+    auto root = makeBridgeRoot();
+    QVERIFY(root.isValid());
+    ModLockBridge bridge(root.path());
+    QSignalSpy completed(&bridge, &ModLockBridge::completed);
+    QSignalSpy finished(&bridge, &ModLockBridge::finished);
+    bool activeAfterResult = false;
+    connect(&bridge, &ModLockBridge::completed, &bridge, [&bridge, &finished, &activeAfterResult] {
+        activeAfterResult = bridge.isActive();
+        QCOMPARE(finished.count(), 0);
+    });
+
+    QVERIFY(bridge.start("terminal-delay-test"));
+    QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 5000);
+    QVERIFY(activeAfterResult);
+    QCOMPARE(finished.count(), 0);
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+    QVERIFY(!bridge.isActive());
 }
 
 void ModLockBridgeTest::preservesStructuredErrors()

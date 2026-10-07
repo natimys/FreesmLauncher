@@ -24,6 +24,7 @@ class ModLockCreationTask final : public VanillaCreationTask {
 
    protected:
     bool runPostInstall() override;
+    bool abortCancelsMinecraftDownload() const override { return true; }
 
    private:
     QJsonObject m_pack;
@@ -31,5 +32,6 @@ class ModLockCreationTask final : public VanillaCreationTask {
     QString m_packName;
     QString m_packVersion;
     QString m_minecraftRoot;
+    QJsonObject m_installError;
     std::unique_ptr<ModLockBridge> m_bridge;
 };

@@ -972,7 +972,9 @@ class InstanceStaging : public Task {
     void childFailed(const QString& reason)
     {
         m_backoffTimer.stop();
-        m_parent->destroyStagingPath(m_stagingPath);
+        const bool recoveryBackupStillInStaging = reason.startsWith("ModLock installation recovery failed.") && reason.contains(m_stagingPath);
+        if (!recoveryBackupStillInStaging)
+            m_parent->destroyStagingPath(m_stagingPath);
         emitFailed(reason);
     }
 

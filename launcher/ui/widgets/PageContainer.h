@@ -70,7 +70,7 @@ class PageContainer : public QWidget, public BasePageContainer {
      * Save any unsaved state and prepare to be closed.
      * @return true if everything can be saved, false if there is something that requires attention
      */
-    bool prepareToClose();
+    bool prepareToClose(bool savePages = true);
     bool saveAll();
 
     /* request close - used by individual pages */

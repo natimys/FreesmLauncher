@@ -173,15 +173,20 @@ class ModLockManagedPackPage final : public ManagedPackPage {
     QString id() const override { return "modlock"; }
     QString helpPage() const override { return "ModLock"; }
     void openedImpl() override;
+    bool prepareToClose() override;
 
    public slots:
     void update() override;
 
    private:
     void applyPreview();
+    void onBridgeFinished();
     void setBusy(bool busy, const QString& status = {});
 
     class ModLockBridge* m_bridge = nullptr;
+    QString m_operation;
+    QJsonObject m_result;
+    QJsonObject m_error;
     QString m_previewRevision;
     bool m_busy = false;
 };
