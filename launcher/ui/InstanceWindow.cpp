@@ -136,7 +136,11 @@ InstanceWindow::InstanceWindow(BaseInstance* instance, QWidget* parent) : QMainW
 
     // add ourself as the modpack page's instance window
     {
-        static_cast<ManagedPackPage*>(m_container->getPage("managed_pack"))->setInstanceWindow(this);
+        auto* page = m_container->getPage("managed_pack");
+        if (!page)
+            page = m_container->getPage("modlock");
+        if (auto* managedPackPage = dynamic_cast<ManagedPackPage*>(page))
+            managedPackPage->setInstanceWindow(this);
     }
 
     show();
