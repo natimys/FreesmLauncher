@@ -37,6 +37,7 @@ std::unique_ptr<MinecraftInstance> ModLockCreationTask::createInstance()
     auto instance = VanillaCreationTask::createInstance();
     if (instance) {
         m_minecraftRoot = instance->gameRoot();
+        m_instanceRoot = instance->instanceRoot();
         instance->setManagedPack("modlock", m_pack.value("repository").toString(), m_packName, m_revision, m_packVersion);
         instance->settings()->set("ManagedPackURL", m_pack.value("repository").toString());
         instance->settings()->set("ModLockBranch", m_pack.value("branch").toString());
@@ -104,6 +105,7 @@ void ModLockCreationTask::startInstall(const QJsonArray& confirmedConflicts)
     setAbortButtonText(tr("Cancel"));
     setDetails(tr("Installing ModLock files"));
     QJsonObject params{{"pack", m_pack}, {"revision", m_revision}};
+    params.insert("target_roots", modLockTargetRoots(m_minecraftRoot, m_instanceRoot));
     if (!confirmedConflicts.isEmpty())
         params.insert("confirmed_conflicts", confirmedConflicts);
     if (!m_bridge->start("install", params)) {

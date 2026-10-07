@@ -102,7 +102,7 @@ void ModLockImportPage::preview()
             return;
         }
         const int schema = lock.value("schema").toInt(1);
-        if (schema != 1 && schema != 2) {
+        if (schema != 1 && schema != 2 && schema != 3) {
             m_status->setText(tr("This ModLock schema is not supported by this launcher."));
             m_preview->setEnabled(true);
             return;
@@ -153,7 +153,7 @@ void ModLockImportPage::preview()
             if (minecraftVersion.isEmpty()) invalid = true;
             if (invalid) {
                 m_dialog->setModLockSource({}, {}, {}, {});
-                m_status->setText(tr("Schema 2 requires one Minecraft version and at most one supported loader. Unknown or duplicate components were found."));
+                m_status->setText(tr("Schema %1 requires one Minecraft version and at most one supported loader. Unknown or duplicate components were found.").arg(schema));
                 m_preview->setEnabled(true);
                 return;
             }
@@ -161,11 +161,29 @@ void ModLockImportPage::preview()
             details.append(loaderId.isEmpty() ? tr("Loader: none") : tr("Loader: %1 %2").arg(loaderId, loaderVersion));
             const int fileCount = lock.value("mods").toArray().size() + lock.value("files").toArray().size();
             details.append(tr("Files: %1").arg(fileCount));
+            QString targetSummary;
+            if (schema >= 3) {
+                int clientCount = 0;
+                int serverCount = 0;
+                const auto countTargets = [&clientCount, &serverCount](const QJsonArray& entries) {
+                    for (const auto& entry : entries) {
+                        const auto targets = entry.toObject().value("targets").toArray();
+                        for (const auto& target : targets) {
+                            if (target.toString() == "client") ++clientCount;
+                            if (target.toString() == "server") ++serverCount;
+                        }
+                    }
+                };
+                countTargets(lock.value("mods").toArray());
+                countTargets(lock.value("files").toArray());
+                targetSummary = tr("Targets: %1 client entries, %2 server entries").arg(clientCount).arg(serverCount);
+                details.append(targetSummary);
+            }
             auto versions = makeShared<SequentialTask>(tr("Checking exact ModLock profile versions"));
             versions->addTask(APPLICATION->metadataIndex()->loadVersion("net.minecraft", minecraftVersion));
             if (!loaderId.isEmpty())
                 versions->addTask(APPLICATION->metadataIndex()->loadVersion(loaderId, loaderVersion));
-            connect(versions.get(), &Task::finished, this, [this, versions, generation, pack, revision = result.value("revision").toString(), name, version, minecraftVersion, loaderId, loaderVersion, fileCount] {
+            connect(versions.get(), &Task::finished, this, [this, versions, generation, pack, revision = result.value("revision").toString(), name, version, minecraftVersion, loaderId, loaderVersion, fileCount, schema, targetSummary] {
                 if (generation != m_generation)
                     return;
                 m_preview->setEnabled(true);
@@ -181,10 +199,10 @@ void ModLockImportPage::preview()
                     loader = APPLICATION->metadataIndex()->getLoadedVersion(loaderId, loaderVersion);
                 m_dialog->setSuggestedPack(name, version,
                                            new ModLockCreationTask(minecraft, loaderId, loader, pack, revision, name, version));
-                m_status->setText(tr("Build: %1 — %2\nMinecraft: %3\nLoader: %4\nFiles: %5")
+                m_status->setText(tr("Build: %1 — %2\nMinecraft: %3\nLoader: %4\nFiles: %5%6")
                                       .arg(name, version, minecraftVersion,
                                            loaderId.isEmpty() ? tr("none") : loaderId + " " + loaderVersion,
-                                           QString::number(fileCount)));
+                                           QString::number(fileCount), targetSummary.isEmpty() ? QString() : QStringLiteral("\n") + targetSummary));
             });
             m_status->setText(details.join('\n') + tr("\nChecking exact component versions…"));
             versions->start();

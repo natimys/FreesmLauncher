@@ -18,6 +18,8 @@ set(CORE_SOURCES
     LoggedProcess.cpp
     modlock/ModLockBridge.h
     modlock/ModLockBridge.cpp
+    modlock/PackEditorModel.h
+    modlock/PackEditorModel.cpp
     modlock/ModLockCreationTask.h
     modlock/ModLockCreationTask.cpp
     MessageLevel.cpp

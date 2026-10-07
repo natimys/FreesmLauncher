@@ -52,7 +52,8 @@ void ModLockUpdate::check()
     connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) { m_result = result; });
     connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) { m_error = error; });
     connect(m_bridge, &ModLockBridge::finished, this, &ModLockUpdate::onBridgeFinished);
-    if (!m_bridge->start("check")) {
+    auto* instance = m_parent->instance();
+    if (!m_bridge->start("check", {{"target_roots", modLockTargetRoots(instance->gameRoot(), instance->instanceRoot())}})) {
         m_bridge->deleteLater();
         m_bridge = nullptr;
         m_error = {{"code", "component_unavailable"}, {"message", tr("Could not start the ModLock component.")}};
@@ -77,6 +78,7 @@ void ModLockUpdate::apply(const QString& revision, const QJsonArray& confirmedCo
     QJsonObject params{{"revision", revision}};
     if (!m_confirmedConflicts.isEmpty())
         params.insert("confirmed_conflicts", m_confirmedConflicts);
+    params.insert("target_roots", modLockTargetRoots(m_parent->instance()->gameRoot(), m_parent->instance()->instanceRoot()));
     if (!m_bridge->start("apply", params)) {
         m_bridge->deleteLater();
         m_bridge = nullptr;
@@ -244,7 +246,8 @@ void ModLockUpdate::verifyAfterNetworkFailure(const QJsonObject& error)
     connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) { m_result = result; });
     connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& result) { m_error = result; });
     connect(m_bridge, &ModLockBridge::finished, this, &ModLockUpdate::onBridgeFinished);
-    if (!m_bridge->start("verify")) {
+    auto* instance = m_parent->instance();
+    if (!m_bridge->start("verify", {{"target_roots", modLockTargetRoots(instance->gameRoot(), instance->instanceRoot())}})) {
         m_bridge->deleteLater();
         m_bridge = nullptr;
         QMessageBox::critical(nullptr, tr("ModLock verification failed"), tr("Could not start local file verification. Launch is blocked."));

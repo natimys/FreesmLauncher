@@ -44,3 +44,7 @@ class ModLockBridge final : public QObject {
     bool m_terminalEventReceived = false;
     bool m_finishedEmitted = false;
 };
+
+// Physical roots are supplied by the trusted launcher instance model. They are
+// request data only; ModLock manifests never choose filesystem roots.
+QJsonObject modLockTargetRoots(const QString& clientRoot, const QString& instanceRoot);

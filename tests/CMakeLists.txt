@@ -73,6 +73,9 @@ ecm_add_test(ConfigMigration_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSI
 ecm_add_test(PageContainerClose_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME PageContainerClose)
 
+ecm_add_test(PackEditorModel_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME PackEditorModel)
+
 if(TARGET modlock_payload)
     add_executable(ModLockBridgeWorker ModLockBridgeWorker.cpp)
     ecm_add_test(ModLockBridge_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test

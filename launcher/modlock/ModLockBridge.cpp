@@ -2,12 +2,18 @@
 #include "ModLockBridge.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QUuid>
 
 namespace {
 constexpr qsizetype MaxEventBytes = 1024 * 1024;
+}
+
+QJsonObject modLockTargetRoots(const QString& clientRoot, const QString& instanceRoot)
+{
+    return {{"client", QDir(clientRoot).absolutePath()}, {"server", QDir(instanceRoot).absoluteFilePath("server")}};
 }
 
 ModLockBridge::ModLockBridge(QString root, QObject* parent) : QObject(parent), m_root(std::move(root))

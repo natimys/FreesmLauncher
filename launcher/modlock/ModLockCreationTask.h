@@ -33,6 +33,7 @@ class ModLockCreationTask final : public VanillaCreationTask {
     QString m_revision;
     QString m_packName;
     QString m_packVersion;
+    QString m_instanceRoot;
     QString m_minecraftRoot;
     QJsonObject m_installError;
     std::unique_ptr<ModLockBridge> m_bridge;

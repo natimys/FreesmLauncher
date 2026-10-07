@@ -598,7 +598,7 @@ void ModLockManagedPackPage::update()
         m_error = error;
     });
     connect(m_bridge, &ModLockBridge::finished, this, &ModLockManagedPackPage::onBridgeFinished);
-    if (!m_bridge->start("check")) {
+    if (!m_bridge->start("check", {{"target_roots", modLockTargetRoots(m_inst->gameRoot(), m_inst->instanceRoot())}})) {
         setBusy(false, tr("Could not start the ModLock component."));
         m_bridge->deleteLater();
         m_bridge = nullptr;
@@ -627,6 +627,7 @@ void ModLockManagedPackPage::applyPreview(const QJsonArray& confirmedConflicts)
     });
     connect(m_bridge, &ModLockBridge::finished, this, &ModLockManagedPackPage::onBridgeFinished);
     QJsonObject params{{"revision", m_previewRevision}};
+    params.insert("target_roots", modLockTargetRoots(m_inst->gameRoot(), m_inst->instanceRoot()));
     if (!m_confirmedConflicts.isEmpty())
         params.insert("confirmed_conflicts", m_confirmedConflicts);
     if (!m_bridge->start("apply", params)) {
