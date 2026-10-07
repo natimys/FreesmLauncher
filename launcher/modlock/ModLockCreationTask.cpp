@@ -3,6 +3,7 @@
 
 #include "BaseInstance.h"
 #include "ModLockBridge.h"
+#include "ModLockConflictDialog.h"
 
 #include <QDir>
 
@@ -51,6 +52,16 @@ bool ModLockCreationTask::runPostInstall()
         return true;
     }
 
+    startInstall();
+    return true;
+}
+
+void ModLockCreationTask::startInstall(const QJsonArray& confirmedConflicts)
+{
+    if (m_bridge) {
+        m_bridge.release()->deleteLater();
+    }
+    m_installError = {};
     m_bridge = std::make_unique<ModLockBridge>(m_minecraftRoot);
     connect(m_bridge.get(), &ModLockBridge::progress, this, [this](const QString&, const QString& message) { setStatus(message); });
     connect(m_bridge.get(), &ModLockBridge::completed, this, [this](const QString&, const QJsonObject&) {});
@@ -71,6 +82,16 @@ bool ModLockCreationTask::runPostInstall()
             emitAborted();
             return;
         }
+        if (m_installError.value("code").toString() == "file_conflict") {
+            QJsonArray confirmations;
+            const auto conflicts = m_installError.value("details").toObject().value("conflicts").toArray();
+            if (ModLockConflictDialog::confirm(nullptr, conflicts, {}, &confirmations)) {
+                startInstall(confirmations);
+            } else {
+                emitAborted();
+            }
+            return;
+        }
         if (!m_installError.isEmpty()) {
             emitFailed(m_installError.value("message").toString(tr("ModLock installation failed.")));
             return;
@@ -82,9 +103,11 @@ bool ModLockCreationTask::runPostInstall()
     m_installError = {};
     setAbortButtonText(tr("Cancel"));
     setDetails(tr("Installing ModLock files"));
-    if (!m_bridge->start("install", {{"pack", m_pack}, {"revision", m_revision}})) {
+    QJsonObject params{{"pack", m_pack}, {"revision", m_revision}};
+    if (!confirmedConflicts.isEmpty())
+        params.insert("confirmed_conflicts", confirmedConflicts);
+    if (!m_bridge->start("install", params)) {
         setAbortable(false);
         emitFailed(tr("Could not start the ModLock component."));
     }
-    return true;
 }

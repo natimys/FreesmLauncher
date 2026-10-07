@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QJsonObject>
+#include <QJsonArray>
 
 #include "minecraft/VanillaInstanceCreationTask.h"
 
@@ -27,6 +28,7 @@ class ModLockCreationTask final : public VanillaCreationTask {
     bool abortCancelsMinecraftDownload() const override { return true; }
 
    private:
+    void startInstall(const QJsonArray& confirmedConflicts = {});
     QJsonObject m_pack;
     QString m_revision;
     QString m_packName;

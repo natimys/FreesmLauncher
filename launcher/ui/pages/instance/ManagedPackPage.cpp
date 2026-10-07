@@ -4,6 +4,7 @@
 
 #include "ManagedPackPage.h"
 #include "modlock/ModLockBridge.h"
+#include "modlock/ModLockConflictDialog.h"
 #include <QDesktopServices>
 #include <QJsonDocument>
 #include <QLineEdit>
@@ -531,12 +532,9 @@ void ModLockManagedPackPage::openedImpl()
     ManagedPackPage::openedImpl();
     ui->packName->setText(m_inst->getManagedPackName());
     ui->packVersion->setText(m_inst->getManagedPackVersionName());
-    ui->packOriginLabel->setText(tr("Repository / branch / lock file:"));
+    ui->packOriginLabel->setText(tr("Repository:"));
     const QString repository = m_inst->settings()->get("ManagedPackURL").toString();
-    const QString branch = m_inst->settings()->get("ModLockBranch").toString();
-    const QString lockPath = m_inst->settings()->get("ModLockLockPath").toString();
-    ui->packOrigin->setText(QStringLiteral("<a href=\"%1\">%1</a> &nbsp;|&nbsp; %2 &nbsp;|&nbsp; %3")
-                                .arg(repository.toHtmlEscaped(), branch.toHtmlEscaped(), lockPath.toHtmlEscaped()));
+    ui->packOrigin->setText(QStringLiteral("<a href=\"%1\">%1</a>").arg(repository.toHtmlEscaped()));
     ui->updateToVersionLabel->setText(tr("ModLock updates:"));
     ui->updateButton->setText(tr("Check for updates"));
     ui->updateButton->setEnabled(!m_inst->isRunning());
@@ -607,13 +605,13 @@ void ModLockManagedPackPage::update()
     }
 }
 
-void ModLockManagedPackPage::applyPreview()
+void ModLockManagedPackPage::applyPreview(const QJsonArray& confirmedConflicts)
 {
     if (m_previewRevision.isEmpty() || m_busy || m_inst->isRunning())
         return;
     m_busy = true;
     m_operation = "apply";
-    m_result = {};
+    m_confirmedConflicts = confirmedConflicts;
     m_error = {};
     ui->updateButton->setEnabled(false);
     ui->changelogTextBrowser->setPlainText(tr("Applying the previewed revision %1...").arg(m_previewRevision));
@@ -628,7 +626,10 @@ void ModLockManagedPackPage::applyPreview()
         m_error = error;
     });
     connect(m_bridge, &ModLockBridge::finished, this, &ModLockManagedPackPage::onBridgeFinished);
-    if (!m_bridge->start("apply", {{"revision", m_previewRevision}})) {
+    QJsonObject params{{"revision", m_previewRevision}};
+    if (!m_confirmedConflicts.isEmpty())
+        params.insert("confirmed_conflicts", m_confirmedConflicts);
+    if (!m_bridge->start("apply", params)) {
         setBusy(false, tr("Could not start the ModLock component."));
         m_bridge->deleteLater();
         m_bridge = nullptr;
@@ -646,6 +647,19 @@ void ModLockManagedPackPage::onBridgeFinished()
         const QString message = m_error.value("message").toString(tr("ModLock could not complete the request."));
         if (code == "cancelled") {
             setBusy(false, tr("ModLock operation cancelled."));
+        } else if (code == "file_conflict" && m_operation == "apply") {
+            const auto conflicts = m_error.value("details").toObject().value("conflicts").toArray();
+            QJsonArray confirmations;
+            if (conflicts.isEmpty()) {
+                applyPreview();
+            } else if (ModLockConflictDialog::confirm(this, conflicts, m_preview.value("managed_files").toArray(), &confirmations)) {
+                applyPreview(confirmations);
+            } else {
+                m_previewRevision.clear();
+                m_confirmedConflicts = {};
+                ui->updateButton->setText(tr("Check for updates"));
+                setBusy(false, tr("Local files were kept. The update was deferred."));
+            }
         } else {
             setBusy(false, tr("ModLock error: %1").arg(message).toHtmlEscaped());
             const bool recovery = code == "recovery_failed";
@@ -656,19 +670,48 @@ void ModLockManagedPackPage::onBridgeFinished()
     }
 
     if (m_operation == "check") {
+        m_preview = m_result;
         m_previewRevision = m_result.value("revision").toString();
         const QJsonObject local = m_result.value("local_installation").toObject();
         const bool needsRecovery = local.value("needs_recovery").toBool();
-        const QString diffText = QString::fromUtf8(QJsonDocument(m_result.value("diff").toObject()).toJson(QJsonDocument::Indented));
-        if (!m_previewRevision.isEmpty() && m_previewRevision == m_inst->getManagedPackVersionID() && !needsRecovery) {
-            ui->changelogTextBrowser->setPlainText(tr("This instance is at the checked revision and its managed files are present: %1")
-                                                       .arg(m_previewRevision));
+        const auto diff = m_result.value("diff").toObject();
+        QStringList changes;
+        const auto appendNames = [&changes](const QString& label, const QJsonValue& value) {
+            QStringList names;
+            for (const auto& item : value.toArray()) names.append(item.toString());
+            if (!names.isEmpty()) changes.append(QObject::tr("%1: %2").arg(label, names.join(", ")));
+        };
+        appendNames(tr("Added"), diff.value("added"));
+        appendNames(tr("Removed"), diff.value("removed"));
+        for (const auto& item : diff.value("updated").toArray()) {
+            const auto update = item.toObject();
+            changes.append(tr("Updated: %1 → %2 (%3 → %4)")
+                               .arg(update.value("old").toObject().value("filename").toString(),
+                                    update.value("new").toObject().value("filename").toString(),
+                                    update.value("old").toObject().value("version").toString(),
+                                    update.value("new").toObject().value("version").toString()));
+        }
+        for (const auto& item : m_result.value("managed_files").toArray()) {
+            const auto managed = item.toObject();
+            changes.append(tr("File %1: %2").arg(managed.value("action").toString(), managed.value("target").toString()));
+        }
+        const QString diffText = changes.isEmpty() ? tr("No content changes.") : changes.join('\n');
+        const bool hasManagedChanges = !m_result.value("managed_files").toArray().isEmpty();
+        const bool hasConflicts = !m_result.value("conflicts").toArray().isEmpty();
+        if (!m_previewRevision.isEmpty() && m_previewRevision == m_inst->getManagedPackVersionID() && !needsRecovery &&
+            !hasManagedChanges && !hasConflicts && diff.value("added").toArray().isEmpty() &&
+            diff.value("removed").toArray().isEmpty() && diff.value("updated").toArray().isEmpty()) {
+            const QString packVersion = m_result.value("lock").toObject().value("pack").toObject().value("version").toString();
+            ui->changelogTextBrowser->setPlainText(tr("Build version: %1\nGit revision: %2\nManaged files are present.")
+                                                       .arg(packVersion.isEmpty() ? m_inst->getManagedPackVersionName() : packVersion, m_previewRevision));
             ui->updateButton->setText(tr("Check for updates"));
             setBusy(false);
             m_previewRevision.clear();
         } else {
             const QString state = needsRecovery ? tr("\nManaged files are missing or damaged and will be restored.") : QString();
-            ui->changelogTextBrowser->setPlainText(tr("Preview revision: %1%2\n\n%3").arg(m_previewRevision, state, diffText));
+            const QString packVersion = m_result.value("lock").toObject().value("pack").toObject().value("version").toString();
+            ui->changelogTextBrowser->setPlainText(tr("Build version: %1\nPreview Git revision: %2%3\n\n%4")
+                                                       .arg(packVersion.isEmpty() ? tr("(not set)") : packVersion, m_previewRevision, state, diffText));
             ui->updateButton->setText(needsRecovery ? tr("Restore / apply preview") : tr("Apply previewed update"));
             setBusy(false);
             ui->updateButton->setEnabled(!m_previewRevision.isEmpty() && !m_inst->isRunning());
@@ -679,12 +722,14 @@ void ModLockManagedPackPage::onBridgeFinished()
     const QString revision = m_result.value("revision").toString();
     if (!revision.isEmpty()) {
         m_inst->settings()->set("ManagedPackVersionID", revision);
-        m_inst->settings()->set("ManagedPackVersionName", revision.left(12));
-        ui->packVersion->setText(revision.left(12));
+        const QString packVersion = m_preview.value("lock").toObject().value("pack").toObject().value("version").toString();
+        if (!packVersion.isEmpty())
+            m_inst->settings()->set("ManagedPackVersionName", packVersion);
+        ui->packVersion->setText(packVersion.isEmpty() ? revision.left(12) : packVersion);
     }
     m_previewRevision.clear();
     ui->updateButton->setText(tr("Check for updates"));
-    setBusy(false, tr("ModLock update applied successfully. Installed revision: %1").arg(revision).toHtmlEscaped());
+    setBusy(false, tr("ModLock update applied successfully. Git revision: %1").arg(revision).toHtmlEscaped());
 }
 
 void ManagedPackPage::updatePack(const QUrl& url, bool trusted, QString versionID, QString versionName)

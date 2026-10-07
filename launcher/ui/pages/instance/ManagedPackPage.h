@@ -16,6 +16,7 @@
 #include "ui/pages/BasePage.h"
 
 #include <QWidget>
+#include <QJsonArray>
 
 namespace Ui {
 class ManagedPackPage;
@@ -179,7 +180,7 @@ class ModLockManagedPackPage final : public ManagedPackPage {
     void update() override;
 
    private:
-    void applyPreview();
+    void applyPreview(const QJsonArray& confirmedConflicts = {});
     void onBridgeFinished();
     void setBusy(bool busy, const QString& status = {});
 
@@ -187,6 +188,8 @@ class ModLockManagedPackPage final : public ManagedPackPage {
     QString m_operation;
     QJsonObject m_result;
     QJsonObject m_error;
+    QJsonObject m_preview;
+    QJsonArray m_confirmedConflicts;
     QString m_previewRevision;
     bool m_busy = false;
 };

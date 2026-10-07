@@ -2,6 +2,7 @@
 #include "ModLockUpdate.h"
 
 #include "BaseInstance.h"
+#include "modlock/ModLockConflictDialog.h"
 #include "modlock/ModLockBridge.h"
 #include "launch/LaunchTask.h"
 
@@ -59,10 +60,10 @@ void ModLockUpdate::check()
     }
 }
 
-void ModLockUpdate::apply(const QString& revision)
+void ModLockUpdate::apply(const QString& revision, const QJsonArray& confirmedConflicts)
 {
     m_operation = "apply";
-    m_result = {};
+    m_confirmedConflicts = confirmedConflicts;
     m_error = {};
     m_revision = revision;
     setStatus(tr("Applying ModLock update"));
@@ -73,7 +74,10 @@ void ModLockUpdate::apply(const QString& revision)
     connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) { m_result = result; });
     connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) { m_error = error; });
     connect(m_bridge, &ModLockBridge::finished, this, &ModLockUpdate::onBridgeFinished);
-    if (!m_bridge->start("apply", {{"revision", revision}})) {
+    QJsonObject params{{"revision", revision}};
+    if (!m_confirmedConflicts.isEmpty())
+        params.insert("confirmed_conflicts", m_confirmedConflicts);
+    if (!m_bridge->start("apply", params)) {
         m_bridge->deleteLater();
         m_bridge = nullptr;
         m_error = {{"code", "component_unavailable"}, {"message", tr("Could not start the ModLock component.")}};
@@ -93,6 +97,24 @@ void ModLockUpdate::onBridgeFinished()
         return;
     }
     if (!m_error.isEmpty()) {
+        if (m_operation == "apply" && m_error.value("code").toString() == "file_conflict") {
+            QJsonArray confirmations;
+            const auto conflicts = m_error.value("details").toObject().value("conflicts").toArray();
+            if (conflicts.isEmpty()) {
+                apply(m_revision);
+            } else if (ModLockConflictDialog::confirm(nullptr, conflicts, m_preview.value("managed_files").toArray(), &confirmations)) {
+                apply(m_revision, confirmations);
+            } else {
+                m_confirmedConflicts = {};
+                if (m_preview.value("local_installation").toObject().value("needs_recovery").toBool()) {
+                    emitAborted();
+                } else {
+                    setStatus(tr("Local files were kept. The update was deferred."));
+                    emitSucceeded();
+                }
+            }
+            return;
+        }
         if (m_operation == "check") {
             showCheckError(m_error);
             return;
@@ -156,14 +178,20 @@ void ModLockUpdate::onBridgeFinished()
     }
 
     if (m_operation == "check") {
+        m_preview = m_result;
         const QString revision = m_result.value("revision").toString();
         const bool needsRecovery = m_result.value("local_installation").toObject().value("needs_recovery").toBool();
+        const auto diff = m_result.value("diff").toObject();
+        const bool hasManagedChanges = !m_result.value("managed_files").toArray().isEmpty();
+        const bool hasConflicts = !m_result.value("conflicts").toArray().isEmpty();
         auto* instance = m_parent->instance();
         if (revision.isEmpty()) {
             emitFailed(tr("ModLock returned no Git revision."));
             return;
         }
-        if (revision == instance->getManagedPackVersionID() && !needsRecovery) {
+        if (revision == instance->getManagedPackVersionID() && !needsRecovery && !hasManagedChanges && !hasConflicts &&
+            diff.value("added").toArray().isEmpty() && diff.value("removed").toArray().isEmpty() &&
+            diff.value("updated").toArray().isEmpty()) {
             setStatus(tr("ModLock is up to date"));
             emitSucceeded();
             return;
@@ -179,8 +207,11 @@ void ModLockUpdate::onBridgeFinished()
     }
     auto* instance = m_parent->instance();
     instance->settings()->set("ManagedPackVersionID", appliedRevision);
-    instance->settings()->set("ManagedPackVersionName", appliedRevision.left(12));
-    setStatus(tr("ModLock updated to %1").arg(appliedRevision.left(12)));
+    const QString packVersion = m_preview.value("lock").toObject().value("pack").toObject().value("version").toString();
+    if (!packVersion.isEmpty())
+        instance->settings()->set("ManagedPackVersionName", packVersion);
+    setStatus(tr("ModLock build %1 installed at Git revision %2").arg(packVersion.isEmpty() ? tr("(version not set)") : packVersion,
+                                                                          appliedRevision.left(12)));
     if (m_abortRequested) {
         emitAborted();
         return;
@@ -225,8 +256,12 @@ void ModLockUpdate::showOfflineChoice()
 {
     const auto local = m_result;
     const bool hasUnverified = !local.value("unverified").toArray().isEmpty();
+    const bool hasLocalChanges = !local.value("managed_changed").toArray().isEmpty();
     QMessageBox box(QMessageBox::Warning, tr("ModLock is unavailable"),
-                    hasUnverified
+                    hasLocalChanges
+                        ? tr("Could not check for an update. Local changes to managed configs or scripts were found and will be preserved. The installed files passed local recovery checks, so you can retry, cancel launch, or play the installed revision.\n\n%1")
+                              .arg(m_networkError.value("message").toString())
+                        : hasUnverified
                         ? tr("Could not check for an update. Managed files are present and files with lock hashes match; some older entries have no hash, so their contents could not be confirmed. You can retry, cancel launch, or play the installed revision.\n\n%1")
                               .arg(m_networkError.value("message").toString())
                         : tr("Could not check for an update. The installed managed files passed local verification. You can retry, cancel launch, or play the installed revision.\n\n%1")

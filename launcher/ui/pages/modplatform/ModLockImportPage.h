@@ -8,8 +8,10 @@
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QGroupBox;
 class NewInstanceDialog;
 class ModLockBridge;
+class SequentialTask;
 
 class ModLockImportPage final : public QWidget, public BasePage {
     Q_OBJECT
@@ -25,13 +27,16 @@ class ModLockImportPage final : public QWidget, public BasePage {
 
     void setRepository(const QString& repository);
     void preview();
+    void invalidatePreview();
 
    private:
     NewInstanceDialog* m_dialog;
     QLineEdit* m_repository;
     QLineEdit* m_branch;
     QLineEdit* m_lockPath;
+    QGroupBox* m_advanced;
     QLabel* m_status;
     QPushButton* m_preview;
     ModLockBridge* m_bridge = nullptr;
+    quint64 m_generation = 0;
 };
