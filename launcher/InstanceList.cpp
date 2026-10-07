@@ -972,8 +972,7 @@ class InstanceStaging : public Task {
     void childFailed(const QString& reason)
     {
         m_backoffTimer.stop();
-        const bool recoveryBackupStillInStaging = reason.startsWith("ModLock installation recovery failed.") && reason.contains(m_stagingPath);
-        if (!recoveryBackupStillInStaging)
+        if (m_child->shouldDestroyStagingOnFailure())
             m_parent->destroyStagingPath(m_stagingPath);
         emitFailed(reason);
     }
@@ -981,7 +980,8 @@ class InstanceStaging : public Task {
     void childAborted()
     {
         m_backoffTimer.stop();
-        m_parent->destroyStagingPath(m_stagingPath);
+        if (m_child->shouldDestroyStagingOnAbort())
+            m_parent->destroyStagingPath(m_stagingPath);
         emitAborted();
     }
 

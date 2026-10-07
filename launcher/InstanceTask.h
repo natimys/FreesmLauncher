@@ -41,6 +41,10 @@ class InstanceTask : public Task, public InstanceName {
 
     void setStagingPath(const QString& stagingPath) { m_stagingPath = stagingPath; }
 
+    void setPreserveStagingOnFailure(bool preserve) { m_preserveStagingOnFailure = preserve; }
+    bool shouldDestroyStagingOnFailure() const { return !m_preserveStagingOnFailure; }
+    bool shouldDestroyStagingOnAbort() const { return true; }
+
     void setIcon(const QString& icon) { m_instIcon = icon; }
 
     void setGroup(const QString& group) { m_instGroup = group; }
@@ -66,6 +70,7 @@ class InstanceTask : public Task, public InstanceName {
     QString m_instIcon;
     QString m_instGroup;
     QString m_stagingPath;
+    bool m_preserveStagingOnFailure = false;
 
     bool m_override_existing = false;
     bool m_confirm_update = true;

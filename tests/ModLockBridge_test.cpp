@@ -16,6 +16,7 @@ class ModLockBridgeTest : public QObject {
     void parsesFragmentedProgressAndResult();
     void cancellationIsCooperative();
     void cancellationKeepsProcessUntilExit();
+    void recoveryFailureRemainsFailureAfterCancellation();
     void terminalResultStillKeepsProcessActive();
     void preservesStructuredErrors();
     void diagnosticsStayOnStderrChannel();
@@ -106,6 +107,22 @@ void ModLockBridgeTest::cancellationKeepsProcessUntilExit()
     QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
     QVERIFY(observedRunningAfterCancel);
     QVERIFY(!bridge.isActive());
+}
+
+void ModLockBridgeTest::recoveryFailureRemainsFailureAfterCancellation()
+{
+    auto root = makeBridgeRoot();
+    QVERIFY(root.isValid());
+    ModLockBridge bridge(root.path());
+    QSignalSpy failed(&bridge, &ModLockBridge::failed);
+    QSignalSpy finished(&bridge, &ModLockBridge::finished);
+    connect(&bridge, &ModLockBridge::progress, &bridge, [&bridge](const QString&, const QString&) { QVERIFY(bridge.cancel()); });
+
+    QVERIFY(bridge.start("recovery-cancel-test"));
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+    QCOMPARE(failed.count(), 1);
+    QCOMPARE(failed.front().at(1).toJsonObject().value("code").toString(), QStringLiteral("recovery_failed"));
+    QVERIFY(failed.front().at(1).toJsonObject().value("message").toString().contains(QStringLiteral("backup")));
 }
 
 void ModLockBridgeTest::terminalResultStillKeepsProcessActive()

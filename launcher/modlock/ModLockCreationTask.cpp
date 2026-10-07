@@ -5,45 +5,6 @@
 #include "ModLockBridge.h"
 
 #include <QDir>
-#include <QDirIterator>
-#include <QFile>
-#include <QFileInfo>
-#include <QUuid>
-
-namespace {
-QString preserveRecoveryBackups(const QString& message, const QString& stagingPath)
-{
-    const QString marker = QStringLiteral("backups preserved at ");
-    const auto markerIndex = message.lastIndexOf(marker);
-    if (markerIndex < 0)
-        return message;
-
-    const QString source = message.mid(markerIndex + marker.size()).trimmed();
-    const QDir stagingParent = QFileInfo(stagingPath).dir();
-    const QString destination = stagingParent.filePath(QStringLiteral("modlock-recovery-") + QUuid::createUuid().toString(QUuid::Id128));
-    const QDir sourceDir(source);
-    if (!sourceDir.exists() || !QDir().mkpath(destination))
-        return message;
-
-    bool copiedAny = false;
-    bool copySucceeded = true;
-    QDirIterator files(source, QDir::Files, QDirIterator::Subdirectories);
-    while (files.hasNext()) {
-        const QString file = files.next();
-        const QString target = QDir(destination).filePath(sourceDir.relativeFilePath(file));
-        if (!QDir().mkpath(QFileInfo(target).dir().absolutePath()) || !QFile::copy(file, target)) {
-            copySucceeded = false;
-            break;
-        }
-        copiedAny = true;
-    }
-    if (copySucceeded && copiedAny)
-        return message.left(markerIndex + marker.size()) + destination;
-
-    QDir(destination).removeRecursively();
-    return message;
-}
-}
 
 ModLockCreationTask::ModLockCreationTask(BaseVersion::Ptr version,
                                          QString loader,
@@ -98,16 +59,20 @@ bool ModLockCreationTask::runPostInstall()
     });
     connect(m_bridge.get(), &ModLockBridge::finished, this, [this] {
         setAbortable(false);
+        const QString code = m_installError.value("code").toString();
+        if (code == "recovery_failed") {
+            setPreserveStagingOnFailure(true);
+            const QString message = m_installError.value("message").toString(tr("Recovery details are unavailable."));
+            emitFailed(tr("ModLock installation recovery failed. Recovery materials remain in the staged instance at:\n%1\n\n%2")
+                           .arg(m_stagingPath, message));
+            return;
+        }
         if (m_abort || m_installError.value("code").toString() == "cancelled") {
             emitAborted();
             return;
         }
         if (!m_installError.isEmpty()) {
-            const bool recovery = m_installError.value("code").toString() == "recovery_failed";
-            const QString message = m_installError.value("message").toString(tr("ModLock installation failed."));
-            emitFailed(recovery ? tr("ModLock installation recovery failed. Backups were preserved at:\n%1")
-                                      .arg(preserveRecoveryBackups(message, m_stagingPath))
-                                : m_installError.value("message").toString(tr("ModLock installation failed.")));
+            emitFailed(m_installError.value("message").toString(tr("ModLock installation failed.")));
             return;
         }
         emitSucceeded();
