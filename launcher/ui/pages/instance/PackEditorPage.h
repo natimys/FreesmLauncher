@@ -3,7 +3,13 @@
 
 #include <QJsonObject>
 #include <QPointer>
+#include <QHash>
+#include <QSet>
+#include <QIcon>
 #include <QWidget>
+#include <QVector>
+
+#include "tasks/Task.h"
 
 #include "modlock/PackEditorModel.h"
 #include "modplatform/ModIndex.h"
@@ -17,7 +23,10 @@ class QLabel;
 class QListView;
 class QPushButton;
 class QTableWidget;
+class QTableView;
 class QLineEdit;
+class QNetworkReply;
+class PackEditorTableModel;
 
 class PackEditorPage final : public QWidget, public BasePage {
     Q_OBJECT
@@ -37,6 +46,9 @@ class PackEditorPage final : public QWidget, public BasePage {
    private:
     void loadAuthorState();
     void refreshView();
+    void requestVisibleIcons();
+    void requestModIcon(const QJsonObject& mod);
+    void resolveProviderMetadata();
     void setBusy(bool busy);
     void runOperation(const QString& operation,
                       const QJsonObject& params,
@@ -67,11 +79,15 @@ class PackEditorPage final : public QWidget, public BasePage {
     QCheckBox* m_showShared = nullptr;
     QLabel* m_status = nullptr;
     QLabel* m_selectedDetails = nullptr;
-    QTableWidget* m_filesTable = nullptr;
-    QTableWidget* m_ignoredTable = nullptr;
-    QTableWidget* m_trackedTable = nullptr;
+    QTableView* m_filesTable = nullptr;
+    QTableView* m_ignoredTable = nullptr;
+    QTableView* m_trackedTable = nullptr;
+    PackEditorTableModel* m_filesModel = nullptr;
+    PackEditorTableModel* m_ignoredModel = nullptr;
+    PackEditorTableModel* m_trackedModel = nullptr;
     QLineEdit* m_commitMessage = nullptr;
     QPushButton* m_refreshButton = nullptr;
+    QPushButton* m_promoteLockButton = nullptr;
     QPushButton* m_scanButton = nullptr;
     QPushButton* m_previewButton = nullptr;
     QPushButton* m_publishButton = nullptr;
@@ -89,6 +105,11 @@ class PackEditorPage final : public QWidget, public BasePage {
     QPushButton* m_ignoreButton = nullptr;
     QPushButton* m_unmanageButton = nullptr;
     QPointer<ModLockBridge> m_bridge;
+    QHash<QString, QIcon> m_iconCache;
+    QSet<QString> m_iconRequests;
+    QSet<QString> m_metadataRequested;
+    QVector<Task::Ptr> m_metadataTasks;
+    bool m_hasWorkspace = false;
     QString m_operation;
     QString m_previewId;
     QJsonObject m_result;

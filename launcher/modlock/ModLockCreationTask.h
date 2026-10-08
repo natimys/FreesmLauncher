@@ -18,7 +18,8 @@ class ModLockCreationTask final : public VanillaCreationTask {
                         QJsonObject pack,
                         QString revision,
                         QString packName,
-                        QString packVersion);
+                        QString packVersion,
+                        int schema = 2);
 
     bool abort() override;
     std::unique_ptr<MinecraftInstance> createInstance() override;
@@ -33,6 +34,7 @@ class ModLockCreationTask final : public VanillaCreationTask {
     QString m_revision;
     QString m_packName;
     QString m_packVersion;
+    int m_schema = 2;
     QString m_instanceRoot;
     QString m_minecraftRoot;
     QJsonObject m_installError;

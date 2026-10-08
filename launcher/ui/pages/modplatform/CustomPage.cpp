@@ -201,7 +201,8 @@ void CustomPage::suggestCurrent()
     if (dialog->hasModLockSource()) {
         auto* task = new ModLockCreationTask(m_selectedVersion, hasLoader ? m_selectedLoader : QString(),
                                              hasLoader ? m_selectedLoaderVersion : BaseVersion::Ptr(), dialog->modLockPack(),
-                                             dialog->modLockRevision(), dialog->modLockName(), dialog->modLockVersion());
+                                             dialog->modLockRevision(), dialog->modLockName(), dialog->modLockVersion(),
+                                             dialog->modLockPack().value("_schema").toInt(2));
         dialog->setSuggestedPack(dialog->modLockName(), dialog->modLockVersion(), task);
     } else if (!hasLoader) {
         dialog->setSuggestedPack(m_selectedVersion->descriptor(), new VanillaCreationTask(m_selectedVersion));

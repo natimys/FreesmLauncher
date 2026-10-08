@@ -13,12 +13,14 @@ ModLockCreationTask::ModLockCreationTask(BaseVersion::Ptr version,
                                          QJsonObject pack,
                                          QString revision,
                                          QString packName,
-                                         QString packVersion)
+                                         QString packVersion,
+                                         int schema)
     : VanillaCreationTask(std::move(version), std::move(loader), std::move(loaderVersion))
     , m_pack(std::move(pack))
     , m_revision(std::move(revision))
     , m_packName(std::move(packName))
     , m_packVersion(std::move(packVersion))
+    , m_schema(schema)
 {}
 
 bool ModLockCreationTask::abort()
@@ -48,7 +50,8 @@ std::unique_ptr<MinecraftInstance> ModLockCreationTask::createInstance()
 
 bool ModLockCreationTask::runPostInstall()
 {
-    if (m_minecraftRoot.isEmpty() || !QDir().mkpath(m_minecraftRoot)) {
+    if (m_minecraftRoot.isEmpty() || !QDir().mkpath(m_minecraftRoot) ||
+        (m_schema >= 3 && !QDir().mkpath(QDir(m_instanceRoot).filePath(QStringLiteral("server"))))) {
         emitFailed(tr("Could not prepare the Minecraft directory for ModLock files."));
         return true;
     }
@@ -63,7 +66,7 @@ void ModLockCreationTask::startInstall(const QJsonArray& confirmedConflicts)
         m_bridge.release()->deleteLater();
     }
     m_installError = {};
-    m_bridge = std::make_unique<ModLockBridge>(m_minecraftRoot);
+        m_bridge = std::make_unique<ModLockBridge>(m_schema >= 3 ? m_instanceRoot : m_minecraftRoot);
     connect(m_bridge.get(), &ModLockBridge::progress, this, [this](const QString&, const QString& message) { setStatus(message); });
     connect(m_bridge.get(), &ModLockBridge::completed, this, [this](const QString&, const QJsonObject&) {});
     connect(m_bridge.get(), &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) {
@@ -105,7 +108,8 @@ void ModLockCreationTask::startInstall(const QJsonArray& confirmedConflicts)
     setAbortButtonText(tr("Cancel"));
     setDetails(tr("Installing ModLock files"));
     QJsonObject params{{"pack", m_pack}, {"revision", m_revision}};
-    params.insert("target_roots", modLockTargetRoots(m_minecraftRoot, m_instanceRoot));
+    if (m_schema >= 3)
+        params.insert("target_roots", modLockTargetRoots(m_minecraftRoot, m_instanceRoot));
     if (!confirmedConflicts.isEmpty())
         params.insert("confirmed_conflicts", confirmedConflicts);
     if (!m_bridge->start("install", params)) {

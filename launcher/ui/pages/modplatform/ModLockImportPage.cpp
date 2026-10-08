@@ -96,7 +96,7 @@ void ModLockImportPage::preview()
         if (generation != m_generation)
             return;
         const QJsonObject lock = result.value("lock").toObject();
-        const QJsonObject pack = lock.value("pack").toObject();
+        QJsonObject pack = lock.value("pack").toObject();
         if (lock.isEmpty() || pack.isEmpty()) {
             m_status->setText(tr("The repository did not return a valid ModLock manifest."));
             m_preview->setEnabled(true);
@@ -114,6 +114,7 @@ void ModLockImportPage::preview()
         QString version = pack.value("version").toString();
         if (version.isEmpty())
             version = result.value("revision").toString().left(12);
+        pack.insert("_schema", schema);
         m_dialog->setModLockSource(pack, result.value("revision").toString(), name, version);
 
         QStringList details{tr("Build: %1 — %2").arg(name, version)};
@@ -184,7 +185,7 @@ void ModLockImportPage::preview()
             versions->addTask(APPLICATION->metadataIndex()->loadVersion("net.minecraft", minecraftVersion));
             if (!loaderId.isEmpty())
                 versions->addTask(APPLICATION->metadataIndex()->loadVersion(loaderId, loaderVersion));
-            connect(versions.get(), &Task::finished, this, [this, versions, generation, pack, revision = result.value("revision").toString(), name, version, minecraftVersion, loaderId, loaderVersion, fileCount, schema, targetSummary] {
+            connect(versions.get(), &Task::finished, this, [this, versions, generation, pack, revision = result.value("revision").toString(), name, version, minecraftVersion, loaderId, loaderVersion, fileCount, schema, targetSummary]() mutable {
                 if (generation != m_generation)
                     return;
                 m_preview->setEnabled(true);
@@ -199,7 +200,7 @@ void ModLockImportPage::preview()
                 if (!loaderId.isEmpty())
                     loader = APPLICATION->metadataIndex()->getLoadedVersion(loaderId, loaderVersion);
                 m_dialog->setSuggestedPack(name, version,
-                                           new ModLockCreationTask(minecraft, loaderId, loader, pack, revision, name, version));
+                                           new ModLockCreationTask(minecraft, loaderId, loader, pack, revision, name, version, schema));
                 m_status->setText(tr("Build: %1 — %2\nMinecraft: %3\nLoader: %4\nFiles: %5%6")
                                       .arg(name, version, minecraftVersion,
                                            loaderId.isEmpty() ? tr("none") : loaderId + " " + loaderVersion,

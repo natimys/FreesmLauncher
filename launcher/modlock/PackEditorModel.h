@@ -2,6 +2,9 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QIcon>
+#include <QHash>
+#include <QVector>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -20,7 +23,7 @@ struct PackEditorAuthorState {
 // Compact per-target status text for details/table views. Falls back to the
 // aggregate status used by older Core bridge responses.
 QString packEditorStatusSummary(const QJsonObject& entry);
-bool packEditorIsAuthorMode(const QString& managedPackType, bool hasAuthorConfig);
+bool packEditorPageShouldDisplay(bool isMinecraftInstance);
 bool modLockImportSchemaSupported(int schema);
 QJsonObject packEditorSetModTargetsParams(const QString& id, const QJsonArray& targets);
 
@@ -38,6 +41,7 @@ class PackEditorTargetModel final : public QAbstractListModel {
 
     void setEntries(const QJsonArray& entries);
     void setShowShared(bool showShared);
+    void setIcon(const QString& identity, const QIcon& icon);
     QString target() const { return m_target; }
     QJsonObject entryAt(int row) const;
 
@@ -45,9 +49,11 @@ class PackEditorTargetModel final : public QAbstractListModel {
     bool entryMatches(const QJsonObject& entry) const;
     bool isShared(const QJsonObject& entry) const;
     QString identity(const QJsonObject& entry) const;
-    QVector<QJsonObject> visibleEntries() const;
+    void rebuildVisibleEntries();
 
     QString m_target;
     QJsonArray m_entries;
+    QVector<QJsonObject> m_visibleEntries;
+    QHash<QString, QIcon> m_icons;
     bool m_showShared = true;
 };

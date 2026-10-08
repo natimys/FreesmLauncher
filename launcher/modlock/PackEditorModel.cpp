@@ -17,9 +17,9 @@ QString packEditorStatusSummary(const QJsonObject& entry)
     return statuses.isEmpty() ? entry.value("status").toString() : statuses.join(QStringLiteral("; "));
 }
 
-bool packEditorIsAuthorMode(const QString& managedPackType, bool hasAuthorConfig)
+bool packEditorPageShouldDisplay(bool isMinecraftInstance)
 {
-    return managedPackType == QStringLiteral("modlock") && hasAuthorConfig;
+    return isMinecraftInstance;
 }
 
 bool modLockImportSchemaSupported(int schema)
@@ -65,23 +65,27 @@ PackEditorTargetModel::PackEditorTargetModel(QString target, QObject* parent)
 
 int PackEditorTargetModel::rowCount(const QModelIndex& parent) const
 {
-    return parent.isValid() ? 0 : visibleEntries().size();
+    return parent.isValid() ? 0 : m_visibleEntries.size();
 }
 
 QVariant PackEditorTargetModel::data(const QModelIndex& index, int role) const
 {
     if (!index.isValid() || index.row() < 0)
         return {};
-    const auto entries = visibleEntries();
-    if (index.row() >= entries.size())
+    if (index.row() >= m_visibleEntries.size())
         return {};
-    const auto entry = entries.at(index.row());
+    const auto entry = m_visibleEntries.at(index.row());
     if (role == EntryRole)
         return entry;
     if (role == IdentityRole)
         return identity(entry);
     if (role == SharedRole)
         return isShared(entry);
+    if (role == Qt::DecorationRole) {
+        const auto key = identity(entry);
+        if (m_icons.contains(key))
+            return m_icons.value(key);
+    }
     if (role == Qt::DisplayRole) {
         for (const auto& key : {QStringLiteral("name"), QStringLiteral("id"), QStringLiteral("filename"), QStringLiteral("path")}) {
             const auto value = entry.value(key).toString();
@@ -105,6 +109,7 @@ void PackEditorTargetModel::setEntries(const QJsonArray& entries)
 {
     beginResetModel();
     m_entries = entries;
+    rebuildVisibleEntries();
     endResetModel();
 }
 
@@ -114,13 +119,26 @@ void PackEditorTargetModel::setShowShared(bool showShared)
         return;
     beginResetModel();
     m_showShared = showShared;
+    rebuildVisibleEntries();
     endResetModel();
+}
+
+void PackEditorTargetModel::setIcon(const QString& entryIdentity, const QIcon& icon)
+{
+    if (entryIdentity.isEmpty() || icon.isNull() || m_icons.value(entryIdentity).cacheKey() == icon.cacheKey())
+        return;
+    m_icons.insert(entryIdentity, icon);
+    for (int row = 0; row < m_visibleEntries.size(); ++row) {
+        if (identity(m_visibleEntries.at(row)) == entryIdentity) {
+            const auto changed = index(row, 0);
+            emit dataChanged(changed, changed, {Qt::DecorationRole});
+        }
+    }
 }
 
 QJsonObject PackEditorTargetModel::entryAt(int row) const
 {
-    const auto entries = visibleEntries();
-    return row >= 0 && row < entries.size() ? entries.at(row) : QJsonObject();
+    return row >= 0 && row < m_visibleEntries.size() ? m_visibleEntries.at(row) : QJsonObject();
 }
 
 bool PackEditorTargetModel::entryMatches(const QJsonObject& entry) const
@@ -156,16 +174,16 @@ QString PackEditorTargetModel::identity(const QJsonObject& entry) const
     return {};
 }
 
-QVector<QJsonObject> PackEditorTargetModel::visibleEntries() const
+void PackEditorTargetModel::rebuildVisibleEntries()
 {
-    QVector<QJsonObject> result;
+    m_visibleEntries.clear();
+    m_visibleEntries.reserve(m_entries.size());
     for (const auto& value : m_entries) {
         if (!value.isObject())
             continue;
         const auto entry = value.toObject();
         if (!entryMatches(entry) || (!m_showShared && isShared(entry)))
             continue;
-        result.append(entry);
+        m_visibleEntries.append(entry);
     }
-    return result;
 }

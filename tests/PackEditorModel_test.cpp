@@ -19,7 +19,7 @@ class PackEditorModelTest : public QObject {
     void conflictKindsDriveConfirmation();
     void targetRootsAreDerivedFromLauncherPaths();
     void targetStatesDriveStatusSummary();
-    void authorModeVisibilityRequiresAuthorConfig();
+    void packEditorVisibilityDoesNotRequireAuthorConfig();
     void schemaOneAndTwoImportsRemainSupported();
     void targetMutationUsesFrozenBridgeDto();
 };
@@ -116,11 +116,10 @@ void PackEditorModelTest::targetStatesDriveStatusSummary()
     QCOMPARE(packEditorStatusSummary(QJsonObject{{"status", "missing"}}), QStringLiteral("missing"));
 }
 
-void PackEditorModelTest::authorModeVisibilityRequiresAuthorConfig()
+void PackEditorModelTest::packEditorVisibilityDoesNotRequireAuthorConfig()
 {
-    QVERIFY(packEditorIsAuthorMode(QStringLiteral("modlock"), true));
-    QVERIFY(!packEditorIsAuthorMode(QStringLiteral("modlock"), false));
-    QVERIFY(!packEditorIsAuthorMode(QStringLiteral("modrinth"), true));
+    QVERIFY(packEditorPageShouldDisplay(true));
+    QVERIFY(!packEditorPageShouldDisplay(false));
 }
 
 void PackEditorModelTest::schemaOneAndTwoImportsRemainSupported()

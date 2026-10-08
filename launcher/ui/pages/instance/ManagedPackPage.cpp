@@ -14,6 +14,8 @@
 #include "ui_ManagedPackPage.h"
 
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QDir>
 #include <QListView>
 #include <QMessageBox>
 #include <QProxyStyle>
@@ -35,6 +37,16 @@
 #include "ui/dialogs/ProgressDialog.h"
 
 #include "net/ApiDownload.h"
+
+namespace {
+QString modLockWorkspaceRoot(BaseInstance* instance)
+{
+    if (!instance)
+        return {};
+    const QString workspaceLock = QDir(instance->instanceRoot()).filePath(QStringLiteral("mod.lock"));
+    return QFileInfo::exists(workspaceLock) ? instance->instanceRoot() : instance->gameRoot();
+}
+}  // namespace
 
 /** This is just to override the combo box popup behavior so that the combo box doesn't take the whole screen.
  *  ... thanks Qt.
@@ -587,7 +599,7 @@ void ModLockManagedPackPage::update()
     m_result = {};
     m_error = {};
     setBusy(true, tr("Checking the ModLock source..."));
-    m_bridge = new ModLockBridge(m_inst->gameRoot(), this);
+    m_bridge = new ModLockBridge(modLockWorkspaceRoot(m_inst), this);
     connect(m_bridge, &ModLockBridge::progress, this, [this](const QString&, const QString& message) {
         ui->changelogTextBrowser->setPlainText(message);
     });
@@ -615,7 +627,7 @@ void ModLockManagedPackPage::applyPreview(const QJsonArray& confirmedConflicts)
     m_error = {};
     ui->updateButton->setEnabled(false);
     ui->changelogTextBrowser->setPlainText(tr("Applying the previewed revision %1...").arg(m_previewRevision));
-    m_bridge = new ModLockBridge(m_inst->gameRoot(), this);
+    m_bridge = new ModLockBridge(modLockWorkspaceRoot(m_inst), this);
     connect(m_bridge, &ModLockBridge::progress, this, [this](const QString&, const QString& message) {
         ui->changelogTextBrowser->setPlainText(message);
     });

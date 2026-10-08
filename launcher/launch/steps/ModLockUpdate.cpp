@@ -7,10 +7,26 @@
 #include "launch/LaunchTask.h"
 
 #include <QFileInfo>
+#include <QDir>
 #include <QJsonArray>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStringList>
+
+namespace {
+QString modLockRoot(BaseInstance* instance)
+{
+    if (!instance)
+        return {};
+    return QFileInfo::exists(QDir(instance->instanceRoot()).filePath(QStringLiteral("mod.lock")))
+               ? instance->instanceRoot() : instance->gameRoot();
+}
+bool hasAuthorConfig(BaseInstance* instance)
+{
+    return instance && (QFileInfo::exists(QDir(instance->instanceRoot()).filePath(QStringLiteral(".modlock/author.toml"))) ||
+                        QFileInfo::exists(QDir(instance->gameRoot()).filePath(QStringLiteral(".modlock/author.toml"))));
+}
+}  // namespace
 
 ModLockUpdate::ModLockUpdate(LaunchTask* parent) : LaunchStep(parent) {}
 
@@ -31,7 +47,7 @@ void ModLockUpdate::executeTask()
 {
     auto* instance = m_parent->instance();
     if (!instance || instance->getManagedPackType() != "modlock" ||
-        QFileInfo::exists(instance->gameRoot() + "/.modlock/author.toml")) {
+        hasAuthorConfig(instance)) {
         emitSucceeded();
         return;
     }
@@ -47,7 +63,7 @@ void ModLockUpdate::check()
     setStatus(tr("Checking ModLock updates"));
     setDetails(tr("Reading the pinned build revision"));
     setAbortable(true);
-    m_bridge = new ModLockBridge(m_parent->instance()->gameRoot(), this);
+    m_bridge = new ModLockBridge(modLockRoot(m_parent->instance()), this);
     connect(m_bridge, &ModLockBridge::progress, this, [this](const QString&, const QString& message) { setDetails(message); });
     connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) { m_result = result; });
     connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) { m_error = error; });
@@ -70,7 +86,7 @@ void ModLockUpdate::apply(const QString& revision, const QJsonArray& confirmedCo
     setStatus(tr("Applying ModLock update"));
     setDetails(tr("Installing previewed revision %1").arg(revision));
     setAbortable(true);
-    m_bridge = new ModLockBridge(m_parent->instance()->gameRoot(), this);
+    m_bridge = new ModLockBridge(modLockRoot(m_parent->instance()), this);
     connect(m_bridge, &ModLockBridge::progress, this, [this](const QString&, const QString& message) { setDetails(message); });
     connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) { m_result = result; });
     connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) { m_error = error; });
@@ -242,7 +258,7 @@ void ModLockUpdate::verifyAfterNetworkFailure(const QJsonObject& error)
     setStatus(tr("Checking installed ModLock files before offering offline launch"));
     setDetails(tr("Verifying local managed mods"));
     setAbortable(true);
-    m_bridge = new ModLockBridge(m_parent->instance()->gameRoot(), this);
+    m_bridge = new ModLockBridge(modLockRoot(m_parent->instance()), this);
     connect(m_bridge, &ModLockBridge::completed, this, [this](const QString&, const QJsonObject& result) { m_result = result; });
     connect(m_bridge, &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& result) { m_error = result; });
     connect(m_bridge, &ModLockBridge::finished, this, &ModLockUpdate::onBridgeFinished);
