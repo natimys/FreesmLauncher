@@ -17,6 +17,7 @@
 
 class BaseInstance;
 class MinecraftInstance;
+class ModFolderModel;
 class ModLockBridge;
 class QCheckBox;
 class QLabel;
@@ -49,6 +50,7 @@ class PackEditorPage final : public QWidget, public BasePage {
     void requestVisibleIcons();
     void requestModIcon(const QJsonObject& mod);
     void resolveProviderMetadata();
+    bool applyLauncherMetadata();
     void setBusy(bool busy);
     void runOperation(const QString& operation,
                       const QJsonObject& params,
@@ -71,6 +73,7 @@ class PackEditorPage final : public QWidget, public BasePage {
 
     BaseInstance* m_instance = nullptr;
     MinecraftInstance* m_minecraftInstance = nullptr;
+    ModFolderModel* m_modsModel = nullptr;
     PackEditorAuthorState m_state;
     PackEditorTargetModel m_clientModel{"client"};
     PackEditorTargetModel m_serverModel{"server"};
@@ -109,6 +112,8 @@ class PackEditorPage final : public QWidget, public BasePage {
     QSet<QString> m_iconRequests;
     QSet<QString> m_metadataRequested;
     QVector<Task::Ptr> m_metadataTasks;
+    QSet<QString> m_launcherCachedIconIdentities;
+    bool m_launcherMetadataLoadRequested = false;
     bool m_hasWorkspace = false;
     QString m_operation;
     QString m_previewId;

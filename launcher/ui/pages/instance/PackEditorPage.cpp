@@ -33,6 +33,8 @@
 #include "modlock/ModLockAddModTask.h"
 #include "modlock/ModLockBridge.h"
 #include "minecraft/MinecraftInstance.h"
+#include "minecraft/mod/Mod.h"
+#include "minecraft/mod/ModFolderModel.h"
 #include "modplatform/ModIndex.h"
 #include "modplatform/modrinth/ModrinthAPI.h"
 #include "modplatform/modrinth/ModrinthPackIndex.h"
@@ -193,6 +195,8 @@ class PackEditorTableModel final : public QAbstractTableModel {
 PackEditorPage::PackEditorPage(BaseInstance* instance, QWidget* parent)
     : QWidget(parent), m_instance(instance), m_minecraftInstance(dynamic_cast<MinecraftInstance*>(instance))
 {
+    m_modsModel = m_minecraftInstance ? m_minecraftInstance->loaderModList() : nullptr;
+
     auto* outer = new QVBoxLayout(this);
     auto* header = new QHBoxLayout;
     header->addWidget(new QLabel(tr("Author workspace"), this));
@@ -377,6 +381,19 @@ PackEditorPage::PackEditorPage(BaseInstance* instance, QWidget* parent)
     m_ignoreFileButton->setEnabled(false);
     m_unmanageFileButton->setEnabled(false);
     m_removeFileButton->setEnabled(false);
+
+    if (m_modsModel) {
+        const auto scheduleMetadataRefresh = [this] {
+            QTimer::singleShot(120, this, [this] {
+                if (applyLauncherMetadata()) {
+                    refreshView();
+                    resolveProviderMetadata();
+                }
+            });
+        };
+        connect(m_modsModel, &ResourceFolderModel::updateFinished, this, scheduleMetadataRefresh);
+        connect(m_modsModel, &ResourceFolderModel::parseFinished, this, scheduleMetadataRefresh);
+    }
 }
 
 QIcon PackEditorPage::icon() const { return QIcon::fromTheme(QStringLiteral("modlock")); }
@@ -401,7 +418,15 @@ bool PackEditorPage::prepareToClose()
     return false;
 }
 
-void PackEditorPage::openedImpl() { loadAuthorState(); }
+void PackEditorPage::openedImpl()
+{
+    if (m_modsModel && !m_launcherMetadataLoadRequested) {
+        m_launcherMetadataLoadRequested = true;
+        if (m_modsModel->rowCount() == 0)
+            m_modsModel->update();
+    }
+    loadAuthorState();
+}
 
 void PackEditorPage::loadAuthorState()
 {
@@ -435,6 +460,7 @@ void PackEditorPage::loadAuthorState()
 
 void PackEditorPage::refreshView()
 {
+    applyLauncherMetadata();
     m_clientModel.setEntries(m_state.mods);
     m_serverModel.setEntries(m_state.mods);
     m_filesModel->setEntries(m_state.files);
@@ -504,6 +530,71 @@ void PackEditorPage::requestModIcon(const QJsonObject& mod)
     });
 }
 
+bool PackEditorPage::applyLauncherMetadata()
+{
+    if (!m_modsModel || m_state.mods.isEmpty())
+        return false;
+
+    QHash<QString, Mod*> modsByProviderId;
+    QHash<QString, Mod*> modsByFilename;
+    for (auto* mod : m_modsModel->allMods()) {
+        if (!mod)
+            continue;
+        if (const auto metadata = mod->metadata(); metadata) {
+            const QString provider = QString::fromLatin1(ModPlatform::ProviderCapabilities::name(metadata->provider));
+            const QString projectId = metadata->project_id.toString();
+            if (!provider.isEmpty() && !projectId.isEmpty())
+                modsByProviderId.insert(provider + QLatin1Char(':') + projectId, mod);
+        }
+        QString filename = mod->fileinfo().fileName();
+        if (filename.endsWith(QStringLiteral(".disabled"), Qt::CaseInsensitive))
+            filename.chop(QStringLiteral(".disabled").size());
+        if (!filename.isEmpty())
+            modsByFilename.insert(filename, mod);
+    }
+
+    bool changed = false;
+    for (int i = 0; i < m_state.mods.size(); ++i) {
+        auto entry = m_state.mods.at(i).toObject();
+        bool entryChanged = false;
+        const QString source = entry.value("source").toString(entry.value("provider").toString()).toLower();
+        const QString projectId = entry.value("project_id").toString();
+        const QString filename = entry.value("filename").toString();
+        Mod* mod = nullptr;
+        if (!source.isEmpty() && !projectId.isEmpty())
+            mod = modsByProviderId.value(source + QLatin1Char(':') + projectId, nullptr);
+        if (!mod && !filename.isEmpty())
+            mod = modsByFilename.value(filename, nullptr);
+        if (!mod)
+            continue;
+
+        const QString identity = entry.value("identity").toString(entry.value("id").toString());
+        const QString name = mod->name().trimmed();
+        if (!name.isEmpty() && (entry.value("name").toString().isEmpty() || entry.value("name").toString() == entry.value("id").toString())) {
+            entry.insert("name", name);
+            entryChanged = true;
+        }
+        if (filename.isEmpty() && mod->metadata() && !mod->metadata()->filename.isEmpty()) {
+            entry.insert("filename", mod->metadata()->filename);
+            entryChanged = true;
+        }
+
+        const auto iconPixmap = mod->icon(QSize(32, 32), Qt::KeepAspectRatio);
+        if (!identity.isEmpty() && !iconPixmap.isNull() && !m_launcherCachedIconIdentities.contains(identity)) {
+            const QIcon icon(iconPixmap);
+            m_clientModel.setIcon(identity, icon);
+            m_serverModel.setIcon(identity, icon);
+            m_launcherCachedIconIdentities.insert(identity);
+            changed = true;
+        }
+        if (entryChanged) {
+            m_state.mods.replace(i, entry);
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 void PackEditorPage::resolveProviderMetadata()
 {
     QStringList modrinthIds;
@@ -515,6 +606,9 @@ void PackEditorPage::resolveProviderMetadata()
         const QString source = mod.value("source").toString(mod.value("provider").toString()).toLower();
         const QString projectId = mod.value("project_id").toString();
         if (projectId.isEmpty())
+            continue;
+        const QString identity = mod.value("identity").toString(mod.value("id").toString());
+        if (m_launcherCachedIconIdentities.contains(identity))
             continue;
         const QString requestKey = source + QLatin1Char(':') + projectId;
         if (m_metadataRequested.contains(requestKey))

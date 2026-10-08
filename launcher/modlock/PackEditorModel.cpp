@@ -87,7 +87,7 @@ QVariant PackEditorTargetModel::data(const QModelIndex& index, int role) const
             return m_icons.value(key);
     }
     if (role == Qt::DisplayRole) {
-        for (const auto& key : {QStringLiteral("name"), QStringLiteral("id"), QStringLiteral("filename"), QStringLiteral("path")}) {
+        for (const auto& key : {QStringLiteral("name"), QStringLiteral("filename"), QStringLiteral("id"), QStringLiteral("path")}) {
             const auto value = entry.value(key).toString();
             if (!value.isEmpty())
                 return value;
