@@ -4,10 +4,19 @@ This is a standalone, interactive browser prototype for design review. It is not
 
 ## Open
 
-Open `index.html` in a modern desktop browser. No package install, web server, or network access is needed. Use the left rail to visit Pack Editor, Mod details, Files, Review & Publish, Modpack Overview, Update preview, Conflict, and Import. The editor search/filters and navigation, target checkboxes, overview state selector, review publish status, conflict choices, and import preview are interactive.
+Open `index.html` in a modern desktop browser. No package install, web server, or network connection is needed. The left rail depicts simulated FreesmLauncher navigation and proposed instance pages. Use the separate **Prototype screen** selector in the top bar to jump between review screens; it is a demo-only shortcut and does not represent production navigation. Production navigation is described in the design documents.
 
-Controls demonstrate proposed states only. They do not write files, access a repository, or invoke bridge operations. Mock data: Clockwork Valley pack, version 1.8.1, 326 mods (20 sample rows), 34 files, 6 excluded items, and fabricated update/review outcomes. The prototype uses an intentionally fixed dark sample palette; production maps semantic roles to the selected Freesm Qt theme.
+The mod inventory preserves query, filters, selection, sort, and scroll when selecting another row. Target checkboxes reflect the selected mod’s actual mock membership and require Apply. Search/filter/sort, add-one-mod with target selection, target edits, managed-file additions, publication success/partial failure/pre-commit failure, update success, all-or-defer conflict outcomes, player states, and import success/errors use local mock state.
+
+## Limitations
+
+- The pack summary says 326 mods, while the prototype includes only 20 representative mod rows. It is not a 326-row performance test.
+- Provider results, publication, install, conflict resolution, and status transitions are simulated. Data is in-memory, disappears on reload, and never writes files or connects to repositories/ModLock.
+- Managed files use a separate mock collection and Files screen; they are not represented as mod resources.
+- The sample palette is intentionally fixed dark styling. It does not preview Freesm system/light/Gruvbox/custom themes or high-DPI Qt rendering.
+- The prototype screen selector exposes reviewer-only workflow routes that production reaches contextually; it is not a production navigation mock.
+- This is a browser artifact mapped to Qt Widgets, not a runnable Qt app. A captured screenshot is not included.
 
 ## Qt mapping
 
-The rail maps to `InstancePageProvider`/`PageContainer`. Inventory/search/detail maps to `QListView`/`QTableView`, `QSortFilterProxyModel`, `QSplitter`, and a detail widget. Controls map to `QPushButton`, `QToolButton`, `QCheckBox`, `QMenu`, and `QDialog`. Status uses theme icons and `QPalette`; lists use `QAbstractItemModel`; progress uses `ProgressDialog`/`InstanceTask`. Every production state must come from `ModLockBridge` payloads, never the mock logic here.
+Proposed production instance pages map to `InstancePageProvider`/`PageContainer`; the prototype screen selector has no production counterpart. Inventory/search/detail maps to `QListView`/`QTableView`, `QSortFilterProxyModel`, `QSplitter`, and a detail widget. Controls map to `QPushButton`, `QToolButton`, `QCheckBox`, `QMenu`, and `QDialog`. Status uses theme icons and `QPalette`; lists use `QAbstractItemModel`; progress uses `ProgressDialog`/`InstanceTask`. Every production state must come from `ModLockBridge` payloads, never the mock logic here.

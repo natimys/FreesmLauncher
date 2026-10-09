@@ -2,6 +2,8 @@
 
 Production behavior proposal. User-facing strings are suggestions and must be translatable. Shared layout and components are specified in [visual design](modlock-visual-design.md).
 
+The prototype’s top-bar screen picker is a reviewer-only shortcut. It is not the proposed production navigation: production keeps Modpack and Pack Editor in the instance page hierarchy, Files/Excluded as editor sections, and Review, Update preview, Conflict, and Import as contextual workflows.
+
 ## 1. Pack Editor — Mods
 
 Entry is an explicit Pack Editor destination for a valid author workspace. Header shows pack and workspace state. Section tabs are Mods, Files, Excluded. Toolbar has search, target filter All/Client/Server/Shared, state filter All/Changed/Excluded, sort, and advanced-filter menu. One unified row per stable resource; shared appears once. Selecting a row fills details without changing list scroll/selection.

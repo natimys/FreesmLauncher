@@ -34,11 +34,15 @@ Quick target filters: All, Client, Server, Shared. Quick state filters: All, Cha
 
 Keyboard: Ctrl+F or `/` focuses search; Up/Down selects; Space opens details; Enter activates the primary item action; Delete opens consequence-specific confirmation; Escape clears search then selection; context menus are keyboard-accessible and list shortcuts. Bulk selection/actions are offered only where the actual operation supports the scope and partial outcomes are reported honestly.
 
+Preserve search text, target/state filters, selected resource identity, sort order, and list scroll offset as one editor view state. Selecting another row updates selection/details in place; it must not rebuild the inventory or reset scroll. Sorting may rebuild rows, but restores the same query, filters, selection, and a stable scroll position. If filtering hides the selected row, retain its details and identify it as outside the visible results.
+
 ### Details and target editing
 
 Hierarchy: icon/name; installed version/provider; target assignment; pack/local state; warnings; valid actions; collapsed **Technical details**. Show readable source, filename, target presence, and verified/unverified only when available. IDs, URL, full digest, schema and revision are copyable technical detail.
 
 Primary target editor: two labeled checkboxes **Client** and **Server**, with an explicit **Apply targets** button after edits. This directly maps to two logical IDs and supports client-only, server-only or shared without inventing a `both` enum. Never save an empty target set; disable Apply with explanation. Accessible labels name resource and target (e.g. “Include Sodium on Server”). Focus stays in details after save; row badges update. Legacy no-target entries read “Client (legacy default)” until explicitly promoted.
+
+At compact widths, selecting a row opens the detail side sheet. Keep a persistent **Selected details** control near the inventory toolbar so details remain discoverable after resizing. Closing the sheet returns focus to the selected row.
 
 Actions depend on state: Choose version/Update, Change targets, Exclude from pack, Stop managing, Remove from pack. Less common actions sit in More. Explain consequences: excluding changes publication intent; stopping management leaves local bytes unmanaged; removal can remove managed content on the next sync. Do not label each action “Remove.”
 
@@ -112,6 +116,10 @@ Resolve semantic roles from current `QPalette` and theme APIs: Window/Base, Alte
 ## Accessibility, DPI, and responsive behavior
 
 Make all workflows keyboard-complete with native focus rings and stable focus after async completion. Give icon-only controls accessible names; announce progress/status; expose row targets/state to assistive technology. Respect text scaling and localization: wrap toolbar, wrap explanations, elide only secondary metadata; avoid fixed window sizes. Below 800 px move secondary filters to a Filter button and details to a side dialog; at 800–1024 let toolbar wrap and collapse pane. Use vector/theme-aware or correctly DPR-scaled icons. Review light, dark, custom themes, contrast, color-vision distinctions, and 100/150/200% DPI.
+
+## Prototype navigation and scope
+
+The prototype’s **Prototype screen** selector is a reviewer-only route switcher. It is visually separate from simulated Freesm launcher chrome and must not be copied into production. Production navigation remains the instance page hierarchy: Modpack for managed players, Pack Editor when an author workspace exists, and Files/Excluded as editor sections. Review, Update preview, Conflict, and Import are workflow screens/dialogs reached from their entry actions, not permanent instance-page destinations. Prototype mock data keeps mod resources and managed files in separate collections and screens.
 
 ## Qt implementation mapping
 
