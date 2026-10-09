@@ -118,13 +118,24 @@ jobs:
           vcvars-arch: ${{ matrix.vcvars-arch }}
           qt-version: ${{ matrix.qt-version }}
 
+      - name: Locate Go executable for MinGW CMake
+        if: ${{ matrix.msystem != '' }}
+        shell: pwsh
+        run: |
+          $goPath = (Get-Command go.exe -ErrorAction Stop).Source -replace '\\', '/'
+          "MODLOCK_GO_EXECUTABLE=$goPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       ##
       # BUILD
       ##
 
       - name: Configure project
         run: |
-          cmake --preset "$CMAKE_PRESET"
+          if [[ -n "${MODLOCK_GO_EXECUTABLE:-}" ]]; then
+            cmake --preset "$CMAKE_PRESET" "-DMODLOCK_GO_EXECUTABLE=$MODLOCK_GO_EXECUTABLE"
+          else
+            cmake --preset "$CMAKE_PRESET"
+          fi
 
       - name: Run build
         run: |
