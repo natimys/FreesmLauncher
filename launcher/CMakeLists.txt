@@ -22,6 +22,8 @@ set(CORE_SOURCES
     modlock/ModLockAddModTask.cpp
     modlock/PackEditorModel.h
     modlock/PackEditorModel.cpp
+    modlock/PackEditorReviewDialog.h
+    modlock/PackEditorReviewDialog.cpp
     modlock/ModLockCreationTask.h
     modlock/ModLockCreationTask.cpp
     MessageLevel.cpp
