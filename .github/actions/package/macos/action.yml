@@ -62,7 +62,7 @@ runs:
         cmake --install ${{ env.BUILD_DIR }} --config ${{ inputs.build-type }}
 
         cd ${{ env.INSTALL_DIR }}
-        chmod +x "FreesmLauncher.app/Contents/MacOS/freesmlauncher"
+        chmod +x "FreesmModLock.app/Contents/MacOS/freesmmodlock"
 
         if [ -n '${{ inputs.apple-codesign-id }}' ]; then
           APPLE_CODESIGN_ID='${{ inputs.apple-codesign-id }}'
@@ -72,8 +72,8 @@ runs:
           ENTITLEMENTS_FILE='../program_info/AdhocSignedApp.entitlements'
         fi
 
-        sudo codesign --sign "$APPLE_CODESIGN_ID" --deep --force --entitlements "$ENTITLEMENTS_FILE" --options runtime "FreesmLauncher.app/Contents/MacOS/freesmlauncher"
-        mv "FreesmLauncher.app" "Freesm Launcher.app"
+        sudo codesign --sign "$APPLE_CODESIGN_ID" --deep --force --entitlements "$ENTITLEMENTS_FILE" --options runtime "FreesmModLock.app/Contents/MacOS/freesmmodlock"
+        mv "FreesmModLock.app" "Freesm Launcher.app"
 
     - name: Notarize
       shell: bash
