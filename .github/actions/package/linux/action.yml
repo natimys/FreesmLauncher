@@ -94,9 +94,9 @@ runs:
         echo "FREESMLAUNCHER_DISABLE_GLVULKAN=1" >> "$INSTALL_APPIMAGE_DIR"/.env
         #makes the launcher use portals for file picking
         echo "QT_QPA_PLATFORMTHEME=xdgdesktopportal" >> "$INSTALL_APPIMAGE_DIR"/.env
-        ln -s org.freesmlauncher.FreesmLauncher.metainfo.xml "$INSTALL_APPIMAGE_DIR"/share/metainfo/org.freesmlauncher.FreesmLauncher.appdata.xml
-        ln -s share/applications/org.freesmlauncher.FreesmLauncher.desktop "$INSTALL_APPIMAGE_DIR"
-        ln -s share/icons/hicolor/256x256/apps/org.freesmlauncher.FreesmLauncher.png "$INSTALL_APPIMAGE_DIR"
+        ln -s org.freesmlauncher.ModLock.metainfo.xml "$INSTALL_APPIMAGE_DIR"/share/metainfo/org.freesmlauncher.ModLock.appdata.xml
+        ln -s share/applications/org.freesmlauncher.ModLock.desktop "$INSTALL_APPIMAGE_DIR"
+        ln -s share/icons/hicolor/256x256/apps/org.freesmlauncher.ModLock.png "$INSTALL_APPIMAGE_DIR"
         mv "$INSTALL_APPIMAGE_DIR"/{sharun,AppRun}
         ls -la "$INSTALL_APPIMAGE_DIR"
 
