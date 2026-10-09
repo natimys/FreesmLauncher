@@ -20,14 +20,19 @@ class MinecraftInstance;
 class ModFolderModel;
 class ModLockBridge;
 class QCheckBox;
+class QComboBox;
 class QLabel;
 class QListView;
 class QPushButton;
 class QTableWidget;
 class QTableView;
+class QToolButton;
 class QLineEdit;
 class QNetworkReply;
 class PackEditorTableModel;
+class QResizeEvent;
+class QSplitter;
+class QGridLayout;
 
 class PackEditorPage final : public QWidget, public BasePage {
     Q_OBJECT
@@ -43,6 +48,9 @@ class PackEditorPage final : public QWidget, public BasePage {
     bool shouldDisplay() const override;
     bool prepareToClose() override;
     void openedImpl() override;
+
+   protected:
+    void resizeEvent(QResizeEvent* event) override;
 
    private:
     void loadAuthorState();
@@ -68,32 +76,42 @@ class PackEditorPage final : public QWidget, public BasePage {
     void removeTrackedPath();
     void removeSelectedResource();
     void showPublishPreview();
-    void publish();
+    void publish(const QString& commitMessage);
     void showStatusMessage(const QString& message, bool error = false);
 
     BaseInstance* m_instance = nullptr;
     MinecraftInstance* m_minecraftInstance = nullptr;
     ModFolderModel* m_modsModel = nullptr;
     PackEditorAuthorState m_state;
-    PackEditorTargetModel m_clientModel{"client"};
-    PackEditorTargetModel m_serverModel{"server"};
-    QListView* m_clientView = nullptr;
-    QListView* m_serverView = nullptr;
-    QCheckBox* m_showShared = nullptr;
+    QJsonObject m_retainedSelection;
+    PackEditorInventoryModel* m_inventoryModel = nullptr;
+    PackEditorInventoryFilter* m_inventoryFilter = nullptr;
+    QTableView* m_inventoryView = nullptr;
+    QSplitter* m_inventorySplitter = nullptr;
+    QGridLayout* m_inventoryToolbar = nullptr;
+    QGridLayout* m_headerLayout = nullptr;
+    QLabel* m_pageTitle = nullptr;
+    QLineEdit* m_search = nullptr;
+    QComboBox* m_targetFilter = nullptr;
+    QComboBox* m_stateFilter = nullptr;
+    QCheckBox* m_targetClient = nullptr;
+    QCheckBox* m_targetServer = nullptr;
+    QPushButton* m_applyTargetsButton = nullptr;
     QLabel* m_status = nullptr;
+    QLabel* m_inventorySummary = nullptr;
     QLabel* m_selectedDetails = nullptr;
+    QToolButton* m_technicalToggle = nullptr;
+    QLabel* m_technicalDetails = nullptr;
     QTableView* m_filesTable = nullptr;
     QTableView* m_ignoredTable = nullptr;
     QTableView* m_trackedTable = nullptr;
     PackEditorTableModel* m_filesModel = nullptr;
     PackEditorTableModel* m_ignoredModel = nullptr;
     PackEditorTableModel* m_trackedModel = nullptr;
-    QLineEdit* m_commitMessage = nullptr;
     QPushButton* m_refreshButton = nullptr;
     QPushButton* m_promoteLockButton = nullptr;
     QPushButton* m_scanButton = nullptr;
     QPushButton* m_previewButton = nullptr;
-    QPushButton* m_publishButton = nullptr;
     QPushButton* m_addModButton = nullptr;
     QPushButton* m_updateModButton = nullptr;
     QPushButton* m_removeResourceButton = nullptr;
@@ -102,9 +120,6 @@ class PackEditorPage final : public QWidget, public BasePage {
     QPushButton* m_ignoreFileButton = nullptr;
     QPushButton* m_unmanageFileButton = nullptr;
     QPushButton* m_removeFileButton = nullptr;
-    QPushButton* m_clientOnlyButton = nullptr;
-    QPushButton* m_serverOnlyButton = nullptr;
-    QPushButton* m_sharedButton = nullptr;
     QPushButton* m_ignoreButton = nullptr;
     QPushButton* m_unmanageButton = nullptr;
     QPointer<ModLockBridge> m_bridge;
@@ -115,6 +130,7 @@ class PackEditorPage final : public QWidget, public BasePage {
     QSet<QString> m_launcherCachedIconIdentities;
     bool m_launcherMetadataLoadRequested = false;
     bool m_hasWorkspace = false;
+    bool m_compactLayout = false;
     QString m_operation;
     QString m_previewId;
     QJsonObject m_result;

@@ -2,6 +2,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QDir>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include "modlock/ModLockConflictDialog.h"
@@ -22,6 +23,14 @@ class PackEditorModelTest : public QObject {
     void packEditorVisibilityDoesNotRequireAuthorConfig();
     void schemaOneAndTwoImportsRemainSupported();
     void targetMutationUsesFrozenBridgeDto();
+    void unifiedInventoryAndCombinedFilters();
+    void identitySurvivesSortAndMetadataRefresh();
+    void missingMetadataAndEmptyInventory();
+    void targetAssignmentRequiresNonEmptyLogicalTargets();
+    void publishResultRequiresExplicitRemoteSuccess();
+    void workspaceVisibilityKeepsPromotionRoute();
+    void duplicateTargetObservationsStayOneLogicalResource();
+    void distinctVersionsWithSameProviderAndFilenameStaySeparate();
 };
 
 void PackEditorModelTest::groupsSchemaThreeTargets()
@@ -100,9 +109,13 @@ void PackEditorModelTest::conflictKindsDriveConfirmation()
 
 void PackEditorModelTest::targetRootsAreDerivedFromLauncherPaths()
 {
-    const auto roots = modLockTargetRoots(QStringLiteral("C:/instances/pack/minecraft"), QStringLiteral("C:/instances/pack"));
-    QCOMPARE(QDir::cleanPath(roots.value("client").toString()), QStringLiteral("C:/instances/pack/minecraft"));
-    QCOMPARE(QDir::cleanPath(roots.value("server").toString()), QStringLiteral("C:/instances/pack/server"));
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    const QString instanceRoot = QDir(temporary.path()).filePath(QStringLiteral("pack"));
+    const QString clientRoot = QDir(instanceRoot).filePath(QStringLiteral("minecraft"));
+    const auto roots = modLockTargetRoots(clientRoot, instanceRoot);
+    QCOMPARE(QDir::cleanPath(roots.value("client").toString()), QDir::cleanPath(clientRoot));
+    QCOMPARE(QDir::cleanPath(roots.value("server").toString()), QDir::cleanPath(QDir(instanceRoot).filePath(QStringLiteral("server"))));
 }
 
 void PackEditorModelTest::targetStatesDriveStatusSummary()
@@ -137,6 +150,127 @@ void PackEditorModelTest::targetMutationUsesFrozenBridgeDto()
     QCOMPARE(params.keys(), QStringList({QStringLiteral("id"), QStringLiteral("targets")}));
     QCOMPARE(params.value("id").toString(), QStringLiteral("modrinth:create"));
     QCOMPARE(params.value("targets").toArray(), QJsonArray{"server"});
+}
+
+void PackEditorModelTest::unifiedInventoryAndCombinedFilters()
+{
+    const QJsonArray entries{
+        QJsonObject{{"id", "modrinth:sodium"}, {"identity", "modrinth:sodium"}, {"name", "Sodium"}, {"provider", "Modrinth"}, {"filename", "sodium.jar"}, {"targets", QJsonArray{"client"}}, {"status", "synced"}},
+        QJsonObject{{"id", "curseforge:chunky"}, {"identity", "curseforge:chunky"}, {"name", "Chunky"}, {"provider", "CurseForge"}, {"filename", "chunky.jar"}, {"targets", QJsonArray{"server"}}, {"status", "synced"}},
+        QJsonObject{{"id", "modrinth:create"}, {"identity", "modrinth:create"}, {"name", "Create"}, {"provider", "Modrinth"}, {"filename", "create.jar"}, {"targets", QJsonArray{"client", "server"}}, {"status", "modified"}},
+    };
+    PackEditorInventoryModel source;
+    PackEditorInventoryFilter proxy;
+    proxy.setSourceModel(&source);
+    source.setEntries(entries);
+    QCOMPARE(source.rowCount(), 3); // shared Create is represented once.
+    proxy.setTargetFilter(QStringLiteral("client"));
+    QCOMPARE(proxy.rowCount(), 2);
+    proxy.setTargetFilter(QStringLiteral("server"));
+    QCOMPARE(proxy.rowCount(), 2);
+    proxy.setTargetFilter(QStringLiteral("shared"));
+    QCOMPARE(proxy.rowCount(), 1);
+    proxy.setTargetFilter(QStringLiteral("all"));
+    proxy.setStateFilter(QStringLiteral("changed"));
+    proxy.setSearchText(QStringLiteral("create.jar"));
+    QCOMPARE(proxy.rowCount(), 1);
+    proxy.setTargetFilter(QStringLiteral("client"));
+    QCOMPARE(proxy.rowCount(), 1);
+    proxy.setSearchText(QStringLiteral("curseforge"));
+    QCOMPARE(proxy.rowCount(), 0);
+    source.setEntries(QJsonArray{QJsonObject{{"id", "legacy"}, {"name", "Old format"}, {"status", "synced"}}});
+    proxy.setSearchText(QString());
+    proxy.setStateFilter(QStringLiteral("all"));
+    proxy.setTargetFilter(QStringLiteral("client"));
+    QCOMPARE(proxy.rowCount(), 1); // Legacy resources keep the historical client default.
+}
+
+void PackEditorModelTest::identitySurvivesSortAndMetadataRefresh()
+{
+    PackEditorInventoryModel source;
+    PackEditorInventoryFilter proxy;
+    proxy.setSourceModel(&source);
+    source.setEntries(QJsonArray{
+        QJsonObject{{"identity", "b"}, {"name", "Zulu"}, {"targets", QJsonArray{"client"}}, {"status", "synced"}},
+        QJsonObject{{"identity", "a"}, {"name", "Alpha"}, {"targets", QJsonArray{"server"}}, {"status", "synced"}},
+    });
+    proxy.sort(PackEditorInventoryModel::NameColumn, Qt::AscendingOrder);
+    QCOMPARE(proxy.index(0, 0).data(PackEditorInventoryModel::IdentityRole).toString(), QStringLiteral("a"));
+    source.setEntries(QJsonArray{
+        QJsonObject{{"identity", "b"}, {"name", "Beta"}, {"targets", QJsonArray{"client"}}, {"status", "synced"}},
+        QJsonObject{{"identity", "a"}, {"name", "Alpha"}, {"targets", QJsonArray{"server"}}, {"status", "synced"}},
+    });
+    QVERIFY(source.rowForResourceKey(source.resourceKey(QJsonObject{{"identity", "a"}, {"name", "Alpha"}, {"targets", QJsonArray{"server"}}, {"status", "synced"}})) >= 0);
+    QCOMPARE(proxy.index(0, 0).data(PackEditorInventoryModel::IdentityRole).toString(), QStringLiteral("a"));
+}
+
+void PackEditorModelTest::missingMetadataAndEmptyInventory()
+{
+    PackEditorInventoryModel model;
+    model.setEntries({});
+    QCOMPARE(model.rowCount(), 0);
+    model.setEntries(QJsonArray{QJsonObject{{"id", "legacy:unknown"}, {"filename", "unknown.jar"}, {"status", "unmanaged"}}});
+    QCOMPARE(model.index(0, PackEditorInventoryModel::NameColumn).data().toString(), QStringLiteral("unknown.jar"));
+    QCOMPARE(model.index(0, PackEditorInventoryModel::ProviderColumn).data().toString(), QStringLiteral("Unknown source"));
+}
+
+void PackEditorModelTest::targetAssignmentRequiresNonEmptyLogicalTargets()
+{
+    QVERIFY(packEditorTargetsAreValid(QJsonArray{"client"}));
+    QVERIFY(packEditorTargetsAreValid(QJsonArray{"server"}));
+    QVERIFY(packEditorTargetsAreValid(QJsonArray{"client", "server"}));
+    QVERIFY(!packEditorTargetsAreValid({}));
+    QVERIFY(!packEditorTargetsAreValid(QJsonArray{"both"}));
+    const auto params = packEditorSetModTargetsParams(QStringLiteral("modrinth:create"), QJsonArray{"client", "server"});
+    QCOMPARE(params.value("targets").toArray(), QJsonArray({QStringLiteral("client"), QStringLiteral("server")}));
+}
+
+void PackEditorModelTest::publishResultRequiresExplicitRemoteSuccess()
+{
+    QVERIFY(packEditorPublishResultIsConfirmed(QJsonObject{{"pushed", true}, {"commit", "abc123"}, {"branch", "main"}}));
+    QVERIFY(!packEditorPublishResultIsConfirmed(QJsonObject{{"pushed", false}, {"commit", "abc123"}, {"branch", "main"}}));
+    QVERIFY(!packEditorPublishResultIsConfirmed(QJsonObject{{"commit", "abc123"}, {"branch", "main"}}));
+    QVERIFY(!packEditorPublishResultIsConfirmed(QJsonObject{{"pushed", true}, {"branch", "main"}}));
+}
+
+void PackEditorModelTest::workspaceVisibilityKeepsPromotionRoute()
+{
+    QVERIFY(packEditorPageShouldDisplay(true, true, false));
+    QVERIFY(packEditorPageShouldDisplay(true, false, true));
+    QVERIFY(!packEditorPageShouldDisplay(true, false, false));
+    QVERIFY(!packEditorPageShouldDisplay(false, true, true));
+}
+
+void PackEditorModelTest::duplicateTargetObservationsStayOneLogicalResource()
+{
+    PackEditorInventoryModel model;
+    model.setEntries(QJsonArray{
+        QJsonObject{{"id", "modrinth:sample"}, {"identity", "modrinth:sample"}, {"filename", "sample.jar"}, {"name", "Sample"},
+                    {"managed", true}, {"targets", QJsonArray{"client"}}, {"status", "synced"},
+                    {"target_states", QJsonArray{QJsonObject{{"target_id", "client"}, {"status", "synced"}}}}},
+        QJsonObject{{"id", "modrinth:sample"}, {"identity", "modrinth:sample"}, {"filename", "sample.jar"}, {"name", "sample.jar"},
+                    {"managed", false}, {"targets", QJsonArray{}}, {"status", "unmanaged"},
+                    {"target_states", QJsonArray{QJsonObject{{"target_id", "server"}, {"status", "unmanaged"}}}}},
+    });
+    QCOMPARE(model.rowCount(), 1);
+    const auto item = model.entryAt(0);
+    QVERIFY(item.value("managed").toBool());
+    QCOMPARE(item.value("targets").toArray(), QJsonArray{"client"});
+    QCOMPARE(item.value("target_states").toArray().size(), 2);
+}
+
+void PackEditorModelTest::distinctVersionsWithSameProviderAndFilenameStaySeparate()
+{
+    PackEditorInventoryModel model;
+    model.setEntries(QJsonArray{
+        QJsonObject{{"identity", "modrinth:sample"}, {"id", "modrinth:sample"}, {"project_id", "sample"},
+                    {"source", "modrinth"}, {"filename", "sample.jar"}, {"version_id", "v1"}, {"version", "1.0"},
+                    {"targets", QJsonArray{"client"}}, {"status", "synced"}},
+        QJsonObject{{"identity", "modrinth:sample"}, {"id", "modrinth:sample"}, {"project_id", "sample"},
+                    {"source", "modrinth"}, {"filename", "sample.jar"}, {"version_id", "v2"}, {"version", "2.0"},
+                    {"targets", QJsonArray{"server"}}, {"status", "synced"}},
+    });
+    QCOMPARE(model.rowCount(), 2);
 }
 
 QTEST_GUILESS_MAIN(PackEditorModelTest)

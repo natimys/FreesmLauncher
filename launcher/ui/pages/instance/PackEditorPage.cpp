@@ -7,6 +7,8 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
+#include <QFrame>
+#include <QGridLayout>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -15,16 +17,23 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMessageBox>
+#include <QMenu>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QPixmap>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QTabWidget>
+#include <QSplitter>
 #include <QTableWidget>
 #include <QTableView>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QScrollBar>
+#include <QScrollArea>
+#include <QSignalBlocker>
+#include <QShortcut>
 #include <QTimer>
 #include <QUrl>
 
@@ -32,6 +41,7 @@
 #include "Application.h"
 #include "modlock/ModLockAddModTask.h"
 #include "modlock/ModLockBridge.h"
+#include "modlock/PackEditorReviewDialog.h"
 #include "minecraft/MinecraftInstance.h"
 #include "minecraft/mod/Mod.h"
 #include "minecraft/mod/ModFolderModel.h"
@@ -55,8 +65,14 @@ QStringList targetsFor(const QJsonObject& entry)
 
 QString displayTargets(const QJsonObject& entry)
 {
+    if (entry.value("excluded").toBool()) return QObject::tr("Excluded");
+    if (!entry.value("targets").isArray()) return QObject::tr("Client (legacy default)");
     const auto targets = targetsFor(entry);
-    return targets.isEmpty() ? QObject::tr("client (legacy)") : targets.join(QStringLiteral(", "));
+    if (targets.isEmpty()) return QObject::tr("On this computer only");
+    QStringList labels;
+    if (targets.contains(QStringLiteral("client"))) labels.append(QObject::tr("Client"));
+    if (targets.contains(QStringLiteral("server"))) labels.append(QObject::tr("Server"));
+    return labels.join(QStringLiteral(" · "));
 }
 
 QJsonArray toTargets(const QStringList& targets)
@@ -65,14 +81,6 @@ QJsonArray toTargets(const QStringList& targets)
     for (const auto& target : targets)
         values.append(target);
     return values;
-}
-
-QStringList stringArray(const QJsonValue& value)
-{
-    QStringList result;
-    for (const auto& item : value.toArray())
-        result.append(item.toString());
-    return result;
 }
 
 QStringList targetsForProviderSide(ModPlatform::Side side)
@@ -143,19 +151,24 @@ class PackEditorTableModel final : public QAbstractTableModel {
         switch (m_kind) {
             case Kind::Files:
                 switch (index.column()) {
-                    case 0: return entry.value("path").toString();
-                    case 1: return entry.value("target").toString();
+                    case 0: return entry.value("target").toString(entry.value("path").toString());
+                    case 1: return entry.value("path").toString();
                     case 2: return displayTargets(entry);
-                    case 3: return entry.value("policy").toString();
-                    case 4: return entry.value("sha256").toString();
-                    case 5: return packEditorStatusSummary(entry);
+                    case 3:
+                        if (entry.value("policy").toString() == QStringLiteral("if_missing")) return tr("Install when missing");
+                        if (entry.value("policy").toString() == QStringLiteral("replace")) return tr("Update from pack");
+                        return entry.value("policy").toString();
+                    case 4: return packEditorStatusSummary(entry);
                 }
                 break;
             case Kind::Tracked:
                 switch (index.column()) {
                     case 0: return entry.value("path").toString();
                     case 1: return displayTargets(entry);
-                    case 2: return entry.value("policy").toString();
+                    case 2:
+                        if (entry.value("policy").toString() == QStringLiteral("if_missing")) return tr("Install when missing");
+                        if (entry.value("policy").toString() == QStringLiteral("replace")) return tr("Update from pack");
+                        return entry.value("policy").toString();
                     case 3: return entry.value("enabled").toBool() ? tr("Tracked") : tr("Disabled");
                 }
                 break;
@@ -198,77 +211,126 @@ PackEditorPage::PackEditorPage(BaseInstance* instance, QWidget* parent)
     m_modsModel = m_minecraftInstance ? m_minecraftInstance->loaderModList() : nullptr;
 
     auto* outer = new QVBoxLayout(this);
-    auto* header = new QHBoxLayout;
-    header->addWidget(new QLabel(tr("Author workspace"), this));
-    header->addStretch();
+    m_headerLayout = new QGridLayout;
+    m_pageTitle = new QLabel(tr("Author workspace"), this);
+    m_headerLayout->addWidget(m_pageTitle, 0, 0);
     m_status = new QLabel(this);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    header->addWidget(m_status, 1);
+    m_headerLayout->addWidget(m_status, 0, 1);
     m_refreshButton = new QPushButton(tr("Refresh"), this);
     m_scanButton = new QPushButton(tr("Scan changes"), this);
-    m_previewButton = new QPushButton(tr("Preview publish"), this);
-    header->addWidget(m_refreshButton);
+    m_previewButton = new QPushButton(tr("Review changes"), this);
     m_promoteLockButton = new QPushButton(tr("Move schema 3 lock to instance root"), this);
     m_promoteLockButton->setVisible(false);
-    header->addWidget(m_promoteLockButton);
-    header->addWidget(m_scanButton);
-    header->addWidget(m_previewButton);
-    outer->addLayout(header);
+    m_headerLayout->addWidget(m_refreshButton, 0, 2);
+    m_headerLayout->addWidget(m_promoteLockButton, 0, 3);
+    m_headerLayout->addWidget(m_scanButton, 0, 4);
+    m_headerLayout->addWidget(m_previewButton, 0, 5);
+    m_headerLayout->setColumnStretch(1, 1);
+    outer->addLayout(m_headerLayout);
 
     auto* tabs = new QTabWidget(this);
     auto* modsTab = new QWidget(tabs);
     auto* modsLayout = new QVBoxLayout(modsTab);
-    auto* sharedRow = new QHBoxLayout;
-    m_showShared = new QCheckBox(tr("Show shared mods"), modsTab);
-    m_showShared->setChecked(true);
-    sharedRow->addWidget(m_showShared);
+    m_inventoryToolbar = new QGridLayout;
+    m_search = new QLineEdit(modsTab);
+    m_search->setPlaceholderText(tr("Search mods by name, file, source or ID"));
+    m_search->setAccessibleName(tr("Search mods"));
+    m_search->setClearButtonEnabled(true);
+    m_targetFilter = new QComboBox(modsTab);
+    m_targetFilter->addItem(tr("All targets"), QStringLiteral("all"));
+    m_targetFilter->addItem(tr("Client"), QStringLiteral("client"));
+    m_targetFilter->addItem(tr("Server"), QStringLiteral("server"));
+    m_targetFilter->addItem(tr("Shared"), QStringLiteral("shared"));
+    m_stateFilter = new QComboBox(modsTab);
+    m_stateFilter->addItem(tr("All states"), QStringLiteral("all"));
+    m_stateFilter->addItem(tr("Changed"), QStringLiteral("changed"));
+    m_stateFilter->addItem(tr("Excluded"), QStringLiteral("excluded"));
     m_addModButton = new QPushButton(tr("Add mod"), modsTab);
-    m_updateModButton = new QPushButton(tr("Update"), modsTab);
-    sharedRow->addWidget(m_updateModButton);
-    sharedRow->addStretch();
-    sharedRow->addWidget(m_addModButton);
-    modsLayout->addLayout(sharedRow);
+    m_updateModButton = new QPushButton(tr("Choose version"), modsTab);
+    m_inventoryToolbar->addWidget(m_search, 0, 0, 1, 2);
+    m_inventoryToolbar->addWidget(m_targetFilter, 0, 2);
+    m_inventoryToolbar->addWidget(m_stateFilter, 0, 3);
+    m_inventoryToolbar->addWidget(m_addModButton, 0, 4);
+    m_inventoryToolbar->setColumnStretch(0, 1);
+    modsLayout->addLayout(m_inventoryToolbar);
+    m_inventorySummary = new QLabel(modsTab);
+    m_inventorySummary->setAccessibleName(tr("Inventory result count"));
+    modsLayout->addWidget(m_inventorySummary);
 
-    auto* columns = new QHBoxLayout;
-    auto* clientBox = new QGroupBox(tr("Client"), modsTab);
-    auto* clientLayout = new QVBoxLayout(clientBox);
-    m_clientView = new QListView(clientBox);
-    m_clientView->setModel(&m_clientModel);
-    m_clientView->setIconSize(QSize(32, 32));
-    m_clientView->setUniformItemSizes(true);
-    clientLayout->addWidget(m_clientView);
-    auto* serverBox = new QGroupBox(tr("Server"), modsTab);
-    auto* serverLayout = new QVBoxLayout(serverBox);
-    m_serverView = new QListView(serverBox);
-    m_serverView->setModel(&m_serverModel);
-    m_serverView->setIconSize(QSize(32, 32));
-    m_serverView->setUniformItemSizes(true);
-    serverLayout->addWidget(m_serverView);
-    columns->addWidget(clientBox, 1);
-    columns->addWidget(serverBox, 1);
-    modsLayout->addLayout(columns, 1);
-
-    m_selectedDetails = new QLabel(modsTab);
+    m_inventorySplitter = new QSplitter(Qt::Horizontal, modsTab);
+    m_inventoryView = new QTableView(m_inventorySplitter);
+    m_inventoryModel = new PackEditorInventoryModel(this);
+    m_inventoryFilter = new PackEditorInventoryFilter(this);
+    m_inventoryFilter->setSourceModel(m_inventoryModel);
+    m_inventoryView->setModel(m_inventoryFilter);
+    m_inventoryView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_inventoryView->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_inventoryView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_inventoryView->setSortingEnabled(true);
+    m_inventoryView->setAlternatingRowColors(true);
+    m_inventoryView->verticalHeader()->hide();
+    m_inventoryView->verticalHeader()->setDefaultSectionSize(48);
+    m_inventoryView->horizontalHeader()->setStretchLastSection(true);
+    m_inventoryView->setIconSize(QSize(32, 32));
+    m_inventoryView->setContextMenuPolicy(Qt::CustomContextMenu);
+    auto* detailPane = new QWidget;
+    auto* detailLayout = new QVBoxLayout(detailPane);
+    detailLayout->setContentsMargins(12, 8, 8, 8);
+    m_selectedDetails = new QLabel(tr("Select a mod to see its details and actions."), detailPane);
     m_selectedDetails->setWordWrap(true);
     m_selectedDetails->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    modsLayout->addWidget(m_selectedDetails);
-    auto* actions = new QHBoxLayout;
-    m_clientOnlyButton = new QPushButton(tr("Client only"), modsTab);
-    m_serverOnlyButton = new QPushButton(tr("Server only"), modsTab);
-    m_sharedButton = new QPushButton(tr("Shared"), modsTab);
-    m_ignoreButton = new QPushButton(tr("Ignore"), modsTab);
-    m_unmanageButton = new QPushButton(tr("Stop managing"), modsTab);
-    m_removeResourceButton = new QPushButton(tr("Remove"), modsTab);
-    for (auto* button : {m_clientOnlyButton, m_serverOnlyButton, m_sharedButton, m_ignoreButton, m_unmanageButton, m_removeResourceButton})
-        actions->addWidget(button);
-    modsLayout->addLayout(actions);
+    detailLayout->addWidget(m_selectedDetails);
+    m_technicalToggle = new QToolButton(detailPane);
+    m_technicalToggle->setText(tr("Technical details"));
+    m_technicalToggle->setCheckable(true);
+    m_technicalToggle->setChecked(false);
+    m_technicalToggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_technicalToggle->setArrowType(Qt::RightArrow);
+    m_technicalDetails = new QLabel(detailPane);
+    m_technicalDetails->setWordWrap(true);
+    m_technicalDetails->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_technicalDetails->hide();
+    detailLayout->addWidget(m_technicalToggle);
+    detailLayout->addWidget(m_technicalDetails);
+    connect(m_technicalToggle, &QToolButton::toggled, this, [this](bool expanded) {
+        m_technicalToggle->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
+        m_technicalDetails->setVisible(expanded);
+    });
+    auto* targetsLabel = new QLabel(tr("Included on"), detailPane);
+    detailLayout->addWidget(targetsLabel);
+    m_targetClient = new QCheckBox(tr("Client"), detailPane);
+    m_targetServer = new QCheckBox(tr("Server"), detailPane);
+    m_targetClient->setEnabled(false);
+    m_targetServer->setEnabled(false);
+    detailLayout->addWidget(m_targetClient);
+    detailLayout->addWidget(m_targetServer);
+    m_applyTargetsButton = new QPushButton(tr("Apply targets"), detailPane);
+    m_applyTargetsButton->setEnabled(false);
+    detailLayout->addWidget(m_applyTargetsButton);
+    auto* actions = new QVBoxLayout;
+    m_ignoreButton = new QPushButton(tr("Exclude from pack"), detailPane);
+    m_unmanageButton = new QPushButton(tr("Stop managing"), detailPane);
+    m_removeResourceButton = new QPushButton(tr("Remove from pack"), detailPane);
+    for (auto* button : {m_updateModButton, m_ignoreButton, m_unmanageButton, m_removeResourceButton}) actions->addWidget(button);
+    detailLayout->addLayout(actions);
+    detailLayout->addStretch();
+    auto* detailScroll = new QScrollArea(m_inventorySplitter);
+    detailScroll->setWidgetResizable(true);
+    detailScroll->setFrameShape(QFrame::NoFrame);
+    detailScroll->setWidget(detailPane);
+    m_inventorySplitter->addWidget(m_inventoryView);
+    m_inventorySplitter->addWidget(detailScroll);
+    m_inventorySplitter->setStretchFactor(0, 7);
+    m_inventorySplitter->setStretchFactor(1, 3);
+    modsLayout->addWidget(m_inventorySplitter, 1);
     tabs->addTab(modsTab, tr("Mods"));
 
     auto* filesTab = new QWidget(tabs);
     auto* filesLayout = new QVBoxLayout(filesTab);
     m_filesTable = new QTableView(filesTab);
     m_filesModel = new PackEditorTableModel(PackEditorTableModel::Kind::Files,
-                                             {tr("Path"), tr("Destination"), tr("Targets"), tr("Policy"), tr("SHA-256"), tr("Status")}, m_filesTable);
+                                             {tr("Path"), tr("Pack file"), tr("Included on"), tr("Update behavior"), tr("Status")}, m_filesTable);
     m_filesTable->setModel(m_filesModel);
     m_filesTable->horizontalHeader()->setStretchLastSection(true);
     m_filesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -302,7 +364,7 @@ PackEditorPage::PackEditorPage(BaseInstance* instance, QWidget* parent)
     trackedActions->addStretch();
     trackedLayout->addWidget(m_trackedTable);
     trackedLayout->addLayout(trackedActions);
-    tabs->addTab(trackedTab, tr("Tracked Paths"));
+    tabs->addTab(trackedTab, tr("Watch for files"));
 
     auto* ignoredTab = new QWidget(tabs);
     auto* ignoredLayout = new QVBoxLayout(ignoredTab);
@@ -314,20 +376,21 @@ PackEditorPage::PackEditorPage(BaseInstance* instance, QWidget* parent)
     m_ignoredTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_ignoredTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ignoredLayout->addWidget(m_ignoredTable);
-    tabs->addTab(ignoredTab, tr("Ignored"));
+    auto* excludedInfo = new QLabel(
+        tr("Excluded entries remain on this computer and are omitted from the pack. This editor cannot restore an excluded entry yet; remove its matching exclusion rule from ModLock author settings before adding or tracking it again."),
+        ignoredTab);
+    excludedInfo->setWordWrap(true);
+    excludedInfo->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    ignoredLayout->addWidget(excludedInfo);
+    tabs->addTab(ignoredTab, tr("Excluded"));
     outer->addWidget(tabs, 1);
-
-    auto* publishRow = new QHBoxLayout;
-    publishRow->addWidget(new QLabel(tr("Commit message:"), this));
-    m_commitMessage = new QLineEdit(tr("Update modpack"), this);
-    publishRow->addWidget(m_commitMessage, 1);
-    m_publishButton = new QPushButton(tr("Publish"), this);
-    m_publishButton->setEnabled(false);
-    publishRow->addWidget(m_publishButton);
-    outer->addLayout(publishRow);
 
     connect(m_refreshButton, &QPushButton::clicked, this, &PackEditorPage::loadAuthorState);
     connect(m_promoteLockButton, &QPushButton::clicked, this, [this] {
+        const auto confirmation = QMessageBox::warning(this, tr("Move the author workspace"),
+            tr("This moves the Schema 3 pack lock from the shared game folder into this instance. A backup of the current lock will be kept. Other instances will continue using the original workspace."),
+            QMessageBox::Ok | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (confirmation != QMessageBox::Ok) return;
         runOperation("promote-schema3-lock", {{"target_roots", modLockTargetRoots(m_minecraftInstance->gameRoot(), m_minecraftInstance->instanceRoot())}},
                      [this](const QJsonObject& result) {
                          showStatusMessage(tr("Moved ModLock workspace to the instance root. Previous lock backup: %1").arg(result.value("backup").toString()));
@@ -336,18 +399,50 @@ PackEditorPage::PackEditorPage(BaseInstance* instance, QWidget* parent)
     });
     connect(m_scanButton, &QPushButton::clicked, this, [this] { runOperation("author-scan", {{"target_roots", modLockTargetRoots(m_minecraftInstance->gameRoot(), m_minecraftInstance->instanceRoot())}}); });
     connect(m_previewButton, &QPushButton::clicked, this, &PackEditorPage::showPublishPreview);
-    connect(m_publishButton, &QPushButton::clicked, this, [this] { publish(); });
-    connect(m_showShared, &QCheckBox::toggled, this, [this](bool value) {
-        m_clientModel.setShowShared(value);
-        m_serverModel.setShowShared(value);
+    const auto updateInventorySummary = [this] {
+        const int visibleCount = m_inventoryFilter->rowCount();
+        if (visibleCount > 0) m_inventorySummary->setText(tr("%n mod(s)", "Visible inventory count", visibleCount));
+        else if (m_state.mods.isEmpty()) m_inventorySummary->setText(tr("No mods in this pack. Add a mod to start building the inventory."));
+        else if (!m_search->text().isEmpty()) m_inventorySummary->setText(tr("No mods match your search."));
+        else m_inventorySummary->setText(tr("No mods match the selected filters."));
+        if (!m_inventoryView->currentIndex().isValid() && !m_retainedSelection.isEmpty()) {
+            const int row = m_inventoryModel->rowForResourceKey(m_inventoryModel->resourceKey(m_retainedSelection));
+            const auto index = row >= 0 ? m_inventoryFilter->mapFromSource(m_inventoryModel->index(row, 0)) : QModelIndex();
+            if (index.isValid()) m_inventoryView->selectionModel()->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+            else showSelectedMod(m_retainedSelection);
+        }
+    };
+    connect(m_search, &QLineEdit::textChanged, this, [this, updateInventorySummary](const QString& text) {
+        m_inventoryFilter->setSearchText(text);
+        updateInventorySummary();
     });
-    connect(m_clientView->verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { requestVisibleIcons(); });
-    connect(m_serverView->verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { requestVisibleIcons(); });
+    connect(m_targetFilter, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, updateInventorySummary](int index) {
+        m_inventoryFilter->setTargetFilter(m_targetFilter->itemData(index).toString());
+        updateInventorySummary();
+    });
+    connect(m_stateFilter, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, updateInventorySummary](int index) {
+        m_inventoryFilter->setStateFilter(m_stateFilter->itemData(index).toString());
+        updateInventorySummary();
+    });
+    connect(m_inventoryView->verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { requestVisibleIcons(); });
     connect(m_addModButton, &QPushButton::clicked, this, [this] { addMods(); });
     connect(m_updateModButton, &QPushButton::clicked, this, [this] { addMods(selectedMod()); });
-    connect(m_clientOnlyButton, &QPushButton::clicked, this, [this] { setSelectedTargets(QJsonArray{"client"}); });
-    connect(m_serverOnlyButton, &QPushButton::clicked, this, [this] { setSelectedTargets(QJsonArray{"server"}); });
-    connect(m_sharedButton, &QPushButton::clicked, this, [this] { setSelectedTargets(QJsonArray{"client", "server"}); });
+    connect(m_applyTargetsButton, &QPushButton::clicked, this, [this] {
+        QJsonArray targets;
+        if (m_targetClient->isChecked()) targets.append(QStringLiteral("client"));
+        if (m_targetServer->isChecked()) targets.append(QStringLiteral("server"));
+        setSelectedTargets(targets);
+    });
+    const auto updateTargetApply = [this] {
+        const auto mod = selectedMod();
+        const QJsonArray current = mod.value("targets").toArray();
+        QJsonArray selected;
+        if (m_targetClient->isChecked()) selected.append(QStringLiteral("client"));
+        if (m_targetServer->isChecked()) selected.append(QStringLiteral("server"));
+        m_applyTargetsButton->setEnabled(!m_bridge && !mod.isEmpty() && packEditorTargetsAreValid(selected) && selected != current);
+    };
+    connect(m_targetClient, &QCheckBox::toggled, this, updateTargetApply);
+    connect(m_targetServer, &QCheckBox::toggled, this, updateTargetApply);
     connect(m_ignoreButton, &QPushButton::clicked, this, [this] { setSelectedResourceState("ignored"); });
     connect(m_unmanageButton, &QPushButton::clicked, this, [this] { setSelectedResourceState("unmanaged"); });
     connect(m_removeResourceButton, &QPushButton::clicked, this, &PackEditorPage::removeSelectedResource);
@@ -356,27 +451,37 @@ PackEditorPage::PackEditorPage(BaseInstance* instance, QWidget* parent)
     connect(m_removeFileButton, &QPushButton::clicked, this, &PackEditorPage::removeSelectedFile);
     connect(m_addTrackedButton, &QPushButton::clicked, this, &PackEditorPage::addTrackedPath);
     connect(m_removeTrackedButton, &QPushButton::clicked, this, &PackEditorPage::removeTrackedPath);
-    connect(m_clientView->selectionModel(), &QItemSelectionModel::currentChanged, this,
-            [this](const QModelIndex& current, const QModelIndex&) {
-                if (current.isValid()) {
-                    m_serverView->selectionModel()->clear();
-                    m_serverView->selectionModel()->setCurrentIndex({}, QItemSelectionModel::NoUpdate);
+    connect(m_inventoryView->selectionModel(), &QItemSelectionModel::currentChanged, this,
+            [this](const QModelIndex&, const QModelIndex&) {
+                const auto mod = selectedMod();
+                if (!mod.isEmpty()) {
+                    m_retainedSelection = mod;
+                    showSelectedMod(mod);
                 }
-                showSelectedMod(selectedMod());
             });
-    connect(m_serverView->selectionModel(), &QItemSelectionModel::currentChanged, this,
-            [this](const QModelIndex& current, const QModelIndex&) {
-                if (current.isValid()) {
-                    m_clientView->selectionModel()->clear();
-                    m_clientView->selectionModel()->setCurrentIndex({}, QItemSelectionModel::NoUpdate);
-                }
-                showSelectedMod(selectedMod());
-            });
+    connect(m_inventoryView, &QTableView::customContextMenuRequested, this, [this](const QPoint& point) {
+        const auto index = m_inventoryView->indexAt(point);
+        if (!index.isValid()) return;
+        m_inventoryView->selectionModel()->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        const auto mod = selectedMod();
+        QMenu menu(this);
+        auto* update = menu.addAction(m_updateModButton->text(), this, [this] { addMods(selectedMod()); });
+        update->setEnabled(m_state.lock.toObject().value("schema").toInt() == 3 && !mod.value("project_id").toString().isEmpty());
+        menu.addAction(tr("Exclude from pack"), this, [this] { setSelectedResourceState(QStringLiteral("ignored")); });
+        auto* unmanage = menu.addAction(tr("Stop managing"), this, [this] { setSelectedResourceState(QStringLiteral("unmanaged")); });
+        unmanage->setEnabled(mod.value("managed").toBool());
+        menu.addSeparator();
+        auto* remove = menu.addAction(tr("Remove from pack…"), this, &PackEditorPage::removeSelectedResource);
+        remove->setEnabled(mod.value("managed").toBool());
+        menu.exec(m_inventoryView->viewport()->mapToGlobal(point));
+    });
+    auto* findShortcut = new QShortcut(QKeySequence::Find, this);
+    connect(findShortcut, &QShortcut::activated, this, [this] { m_search->setFocus(); });
     connect(m_filesTable->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this] {
         const bool selected = m_filesTable->currentIndex().isValid();
         m_ignoreFileButton->setEnabled(selected);
         m_unmanageFileButton->setEnabled(selected);
-        m_removeFileButton->setEnabled(selected);
+        m_removeFileButton->setEnabled(selected && m_state.lock.toObject().value("schema").toInt() == 3);
     });
     m_ignoreFileButton->setEnabled(false);
     m_unmanageFileButton->setEnabled(false);
@@ -396,11 +501,56 @@ PackEditorPage::PackEditorPage(BaseInstance* instance, QWidget* parent)
     }
 }
 
+void PackEditorPage::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    const bool compact = width() < 980;
+    if (compact == m_compactLayout) return;
+    m_compactLayout = compact;
+    m_inventorySplitter->setOrientation(compact ? Qt::Vertical : Qt::Horizontal);
+    m_inventoryToolbar->removeWidget(m_search);
+    m_inventoryToolbar->removeWidget(m_targetFilter);
+    m_inventoryToolbar->removeWidget(m_stateFilter);
+    m_inventoryToolbar->removeWidget(m_addModButton);
+    m_headerLayout->removeWidget(m_pageTitle);
+    m_headerLayout->removeWidget(m_status);
+    m_headerLayout->removeWidget(m_refreshButton);
+    m_headerLayout->removeWidget(m_promoteLockButton);
+    m_headerLayout->removeWidget(m_scanButton);
+    m_headerLayout->removeWidget(m_previewButton);
+    if (compact) {
+        m_headerLayout->addWidget(m_pageTitle, 0, 0);
+        m_headerLayout->addWidget(m_status, 0, 1, 1, 2);
+        m_headerLayout->addWidget(m_refreshButton, 1, 0);
+        m_headerLayout->addWidget(m_scanButton, 1, 1);
+        m_headerLayout->addWidget(m_promoteLockButton, 2, 0, 1, 2);
+        m_headerLayout->addWidget(m_previewButton, 3, 0, 1, 2);
+        m_inventoryToolbar->addWidget(m_search, 0, 0, 1, 3);
+        m_inventoryToolbar->addWidget(m_targetFilter, 1, 0);
+        m_inventoryToolbar->addWidget(m_stateFilter, 1, 1);
+        m_inventoryToolbar->addWidget(m_addModButton, 1, 2);
+    } else {
+        m_headerLayout->addWidget(m_pageTitle, 0, 0);
+        m_headerLayout->addWidget(m_status, 0, 1);
+        m_headerLayout->addWidget(m_refreshButton, 0, 2);
+        m_headerLayout->addWidget(m_promoteLockButton, 0, 3);
+        m_headerLayout->addWidget(m_scanButton, 0, 4);
+        m_headerLayout->addWidget(m_previewButton, 0, 5);
+        m_inventoryToolbar->addWidget(m_search, 0, 0, 1, 2);
+        m_inventoryToolbar->addWidget(m_targetFilter, 0, 2);
+        m_inventoryToolbar->addWidget(m_stateFilter, 0, 3);
+        m_inventoryToolbar->addWidget(m_addModButton, 0, 4);
+    }
+}
+
 QIcon PackEditorPage::icon() const { return QIcon::fromTheme(QStringLiteral("modlock")); }
 
 bool PackEditorPage::shouldDisplay() const
 {
-    return packEditorPageShouldDisplay(m_minecraftInstance != nullptr);
+    if (!m_minecraftInstance) return false;
+    const bool hasWorkspace = QFileInfo::exists(QDir(m_minecraftInstance->instanceRoot()).filePath(QStringLiteral("mod.lock")));
+    const bool canPromote = QFileInfo::exists(QDir(m_minecraftInstance->gameRoot()).filePath(QStringLiteral("mod.lock")));
+    return packEditorPageShouldDisplay(true, hasWorkspace, canPromote);
 }
 
 bool PackEditorPage::prepareToClose()
@@ -437,21 +587,23 @@ void PackEditorPage::loadAuthorState()
     m_promoteLockButton->setVisible(!m_hasWorkspace && QFileInfo::exists(QDir(m_minecraftInstance->gameRoot()).filePath(QStringLiteral("mod.lock"))));
     if (!m_hasWorkspace) {
         m_state = {};
-        m_clientModel.setEntries({});
-        m_serverModel.setEntries({});
+        m_retainedSelection = {};
+        showSelectedMod({});
+        m_inventoryModel->setEntries({});
         m_filesModel->setEntries({});
         m_trackedModel->setEntries({});
         m_ignoredModel->setEntries({});
-        for (auto* button : {m_scanButton, m_previewButton, m_publishButton, m_addModButton, m_updateModButton,
-                             m_clientOnlyButton, m_serverOnlyButton, m_sharedButton, m_ignoreButton, m_unmanageButton,
+        for (auto* button : {m_scanButton, m_previewButton, m_addModButton, m_updateModButton,
+                             m_ignoreButton, m_unmanageButton,
                              m_removeResourceButton, m_addTrackedButton, m_removeTrackedButton, m_ignoreFileButton,
                              m_unmanageFileButton, m_removeFileButton})
             button->setEnabled(false);
         m_status->setText(tr("No ModLock workspace at the instance root. Import a schema 3 pack to manage client and server together."));
+        m_inventorySummary->setText(tr("No pack workspace is set up for this instance."));
         return;
     }
-    for (auto* button : {m_scanButton, m_previewButton, m_publishButton, m_addModButton, m_updateModButton,
-                         m_clientOnlyButton, m_serverOnlyButton, m_sharedButton, m_ignoreButton, m_unmanageButton,
+    for (auto* button : {m_scanButton, m_previewButton, m_addModButton, m_updateModButton,
+                         m_ignoreButton, m_unmanageButton,
                          m_removeResourceButton, m_addTrackedButton, m_removeTrackedButton, m_ignoreFileButton,
                          m_unmanageFileButton, m_removeFileButton})
         button->setEnabled(true);
@@ -461,33 +613,53 @@ void PackEditorPage::loadAuthorState()
 void PackEditorPage::refreshView()
 {
     applyLauncherMetadata();
-    m_clientModel.setEntries(m_state.mods);
-    m_serverModel.setEntries(m_state.mods);
+    const auto previousSelection = selectedMod().isEmpty() ? m_retainedSelection : selectedMod();
+    const QString selectedResourceKey = m_inventoryModel->resourceKey(previousSelection);
+    const int scrollPosition = m_inventoryView->verticalScrollBar()->value();
+    m_inventoryModel->setEntries(m_state.mods);
     m_filesModel->setEntries(m_state.files);
     m_trackedModel->setEntries(m_state.trackedPaths);
     QJsonArray ignored;
     for (const auto& item : m_state.mods) ignored.append(item);
     for (const auto& item : m_state.files) ignored.append(item);
+    for (const auto& item : m_state.trackedPaths) {
+        if (item.toObject().value("excluded").toBool()) ignored.append(item);
+    }
     m_ignoredModel->setEntries(ignored);
     m_status->setText(tr("Branch: %1%2").arg(m_state.branch, m_state.dirty ? tr(" — local changes") : QString()));
-    m_publishButton->setEnabled(false);
+    const int visibleCount = m_inventoryFilter->rowCount();
+    if (visibleCount > 0) m_inventorySummary->setText(tr("%n mod(s)", "Visible inventory count", visibleCount));
+    else if (m_state.mods.isEmpty()) m_inventorySummary->setText(tr("No mods in this pack. Add a mod to start building the inventory."));
+    else if (!m_search->text().isEmpty()) m_inventorySummary->setText(tr("No mods match your search."));
+    else m_inventorySummary->setText(tr("No mods match the selected filters."));
+    if (!selectedResourceKey.isEmpty()) {
+        const int sourceRow = m_inventoryModel->rowForResourceKey(selectedResourceKey);
+        if (sourceRow >= 0) {
+            const auto proxyIndex = m_inventoryFilter->mapFromSource(m_inventoryModel->index(sourceRow, 0));
+            if (proxyIndex.isValid()) {
+                m_inventoryView->selectionModel()->setCurrentIndex(proxyIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                m_inventoryView->scrollTo(proxyIndex, QAbstractItemView::EnsureVisible);
+            } else {
+                m_retainedSelection = m_inventoryModel->entryAt(sourceRow);
+                showSelectedMod(m_retainedSelection);
+            }
+        } else {
+            m_retainedSelection = {};
+            showSelectedMod({});
+        }
+    }
+    m_inventoryView->verticalScrollBar()->setValue(scrollPosition);
     QTimer::singleShot(0, this, [this] { requestVisibleIcons(); });
 }
 
 void PackEditorPage::requestVisibleIcons()
 {
-    const auto requestFromView = [this](QListView* view, PackEditorTargetModel* model) {
-        if (!view || !view->viewport())
-            return;
-        constexpr int step = 44;
-        for (int y = 0; y < view->viewport()->height(); y += step) {
-            const auto index = view->indexAt(QPoint(2, y));
-            if (index.isValid())
-                requestModIcon(model->entryAt(index.row()));
-        }
-    };
-    requestFromView(m_clientView, &m_clientModel);
-    requestFromView(m_serverView, &m_serverModel);
+    if (!m_inventoryView || !m_inventoryView->viewport()) return;
+    constexpr int step = 48;
+    for (int y = 0; y < m_inventoryView->viewport()->height(); y += step) {
+        const auto index = m_inventoryView->indexAt(QPoint(2, y));
+        if (index.isValid()) requestModIcon(m_inventoryFilter->mapToSource(index).data(PackEditorInventoryModel::EntryRole).toJsonObject());
+    }
 }
 
 void PackEditorPage::requestModIcon(const QJsonObject& mod)
@@ -498,8 +670,7 @@ void PackEditorPage::requestModIcon(const QJsonObject& mod)
         return;
     if (url.isEmpty()) return;
     if (m_iconCache.contains(url)) {
-        m_clientModel.setIcon(identity, m_iconCache.value(url));
-        m_serverModel.setIcon(identity, m_iconCache.value(url));
+        m_inventoryModel->setIcon(identity, m_iconCache.value(url));
         return;
     }
     if (m_iconRequests.contains(url)) return;
@@ -520,8 +691,7 @@ void PackEditorPage::requestModIcon(const QJsonObject& mod)
                     const auto entry = value.toObject();
                     if (entry.value("icon_url").toString() == url) {
                         const auto key = entry.value("identity").toString(entry.value("id").toString());
-                        m_clientModel.setIcon(key, icon);
-                        m_serverModel.setIcon(key, icon);
+                        m_inventoryModel->setIcon(key, icon);
                     }
                 }
             }
@@ -582,8 +752,7 @@ bool PackEditorPage::applyLauncherMetadata()
         const auto iconPixmap = mod->icon(QSize(32, 32), Qt::KeepAspectRatio);
         if (!identity.isEmpty() && !iconPixmap.isNull() && !m_launcherCachedIconIdentities.contains(identity)) {
             const QIcon icon(iconPixmap);
-            m_clientModel.setIcon(identity, icon);
-            m_serverModel.setIcon(identity, icon);
+            m_inventoryModel->setIcon(identity, icon);
             m_launcherCachedIconIdentities.insert(identity);
             changed = true;
         }
@@ -709,13 +878,19 @@ void PackEditorPage::setBusy(bool busy)
 {
     m_refreshButton->setEnabled(!busy);
     m_promoteLockButton->setEnabled(!busy && m_promoteLockButton->isVisible());
-    for (auto* button : {m_scanButton, m_previewButton, m_publishButton, m_addModButton,
-                         m_clientOnlyButton, m_serverOnlyButton, m_sharedButton, m_ignoreButton, m_unmanageButton,
+    const bool schemaThree = m_state.lock.toObject().value("schema").toInt() == 3;
+    for (auto* button : {m_scanButton, m_previewButton, m_addModButton,
+                         m_ignoreButton, m_unmanageButton,
                          m_removeResourceButton, m_addTrackedButton, m_removeTrackedButton, m_updateModButton,
                          m_ignoreFileButton, m_unmanageFileButton, m_removeFileButton})
         button->setEnabled(!busy && m_hasWorkspace);
-    if (!busy && !m_previewId.isEmpty())
-        m_publishButton->setEnabled(true);
+    m_previewButton->setEnabled(!busy && m_hasWorkspace && schemaThree);
+    m_addModButton->setEnabled(!busy && m_hasWorkspace && schemaThree);
+    m_inventoryView->setEnabled(!busy && m_hasWorkspace);
+    m_targetClient->setEnabled(false);
+    m_targetServer->setEnabled(false);
+    m_applyTargetsButton->setEnabled(false);
+    if (!busy) showSelectedMod(selectedMod());
 }
 
 void PackEditorPage::runOperation(const QString& operation,
@@ -726,7 +901,6 @@ void PackEditorPage::runOperation(const QString& operation,
         return;
     if (operation != QStringLiteral("publish-preview") && operation != QStringLiteral("publish")) {
         m_previewId.clear();
-        m_publishButton->setEnabled(false);
     }
     m_operation = operation;
     m_result = {};
@@ -760,7 +934,6 @@ void PackEditorPage::onOperationFinished()
         const QString conflictKind = m_error.value("kind").toString(errorDetails.value("kind").toString());
         if (m_operation == QStringLiteral("publish") && conflictKind == QStringLiteral("changed_during_apply")) {
             m_previewId.clear();
-            m_publishButton->setEnabled(false);
         }
         if (m_operation == QStringLiteral("publish") && m_error.value("code").toString() == QStringLiteral("push_failed")) {
             const auto details = errorDetails;
@@ -772,7 +945,6 @@ void PackEditorPage::onOperationFinished()
             if (!branch.isEmpty())
                 message += tr("\nBranch: %1").arg(branch);
             m_previewId.clear();
-            m_publishButton->setEnabled(false);
             showStatusMessage(message, true);
             loadAuthorState();
             return;
@@ -799,50 +971,31 @@ void PackEditorPage::onOperationFinished()
         showStatusMessage(tr("Scan complete. Resource statuses have been refreshed."));
     } else if (m_operation == QStringLiteral("publish-preview")) {
         m_previewId = m_result.value("preview_id").toString();
-        m_publishButton->setEnabled(!m_previewId.isEmpty());
-        showStatusMessage(tr("Preview ready for branch %1. Review the preview details before publishing.").arg(m_result.value("branch").toString()));
-        QStringList details;
-        details << tr("Branch: %1").arg(m_result.value("branch").toString());
-        const auto appendChanges = [&details](const QString& sectionName, const QJsonObject& changes) {
-            for (const auto& kind : {QStringLiteral("added"), QStringLiteral("updated"), QStringLiteral("removed")}) {
-                QStringList names;
-                for (const auto& item : changes.value(kind).toArray()) {
-                    const auto entry = item.toObject();
-                    QString name = entry.value("name").toString();
-                    if (name.isEmpty()) name = entry.value("id").toString();
-                    if (name.isEmpty()) name = entry.value("target").toString();
-                    if (name.isEmpty()) name = entry.value("path").toString();
-                    if (name.isEmpty()) name = item.toString();
-                    if (!name.isEmpty()) names.append(name);
-                }
-                if (!names.isEmpty())
-                    details << QObject::tr("%1 %2: %3").arg(sectionName, kind, names.join(QStringLiteral(", ")));
-            }
-        };
-        for (const auto& section : {QStringLiteral("mods"), QStringLiteral("files")}) {
-            const auto changes = m_result.value(section).toObject();
-            appendChanges(section, changes);
+        if (m_previewId.isEmpty()) {
+            showStatusMessage(tr("ModLock returned a preview without a publish token."), true);
+            return;
         }
-        for (const auto& changeValue : m_result.value("target_changes").toArray()) {
-            const auto change = changeValue.toObject();
-            QString identity = change.value("id").toString();
-            if (identity.isEmpty()) identity = change.value("path").toString();
-            details << tr("Target change: %1 (%2 → %3)")
-                           .arg(identity, stringArray(change.value("old_targets")).join(", "), stringArray(change.value("targets")).join(", "));
-        }
-        for (const auto& ignored : m_result.value("ignored").toArray()) {
-            const auto entry = ignored.toObject();
-            QString identity = entry.value("id").toString();
-            if (identity.isEmpty()) identity = entry.value("path").toString();
-            if (identity.isEmpty()) identity = ignored.toString();
-            details << tr("Ignored: %1").arg(identity);
-        }
-        details << tr("Commit message: %1").arg(m_result.value("commit_message").toString());
-        QMessageBox::information(this, tr("Publish preview"), details.join('\n'));
+        PackEditorReviewDialog review(m_result, this);
+        if (review.exec() == QDialog::Accepted) publish(review.commitMessage());
     } else if (m_operation == QStringLiteral("publish")) {
         m_previewId.clear();
-        m_publishButton->setEnabled(false);
-        showStatusMessage(tr("Published revision %1 on %2.").arg(m_result.value("revision").toString(), m_result.value("branch").toString()));
+        if (packEditorPublishResultIsConfirmed(m_result)) {
+            showStatusMessage(tr("Published commit %1 to %2.").arg(m_result.value("commit").toString(), m_result.value("branch").toString()));
+        } else if (m_result.value("pushed").isBool() && !m_result.value("pushed").toBool() &&
+                   !m_result.value("commit").toString().isEmpty()) {
+            QString message = tr("Saved locally — not published remotely.");
+            message += tr("\nCommit: %1").arg(m_result.value("commit").toString());
+            if (!m_result.value("branch").toString().isEmpty())
+                message += tr("\nBranch: %1").arg(m_result.value("branch").toString());
+            showStatusMessage(message, true);
+        } else {
+            QString message = tr("ModLock returned an incomplete publication result. Remote publication could not be confirmed.");
+            if (!m_result.value("commit").toString().isEmpty())
+                message += tr("\nCommit: %1").arg(m_result.value("commit").toString());
+            if (!m_result.value("branch").toString().isEmpty())
+                message += tr("\nBranch: %1").arg(m_result.value("branch").toString());
+            showStatusMessage(message, true);
+        }
         loadAuthorState();
     } else if (m_onSuccess) {
         const auto callback = std::move(m_onSuccess);
@@ -854,34 +1007,69 @@ void PackEditorPage::onOperationFinished()
 
 QJsonObject PackEditorPage::selectedMod() const
 {
-    const auto clientIndex = m_clientView->currentIndex();
-    if (clientIndex.isValid())
-        return m_clientModel.entryAt(clientIndex.row());
-    const auto serverIndex = m_serverView->currentIndex();
-    if (serverIndex.isValid())
-        return m_serverModel.entryAt(serverIndex.row());
-    return {};
+    if (!m_inventoryView || !m_inventoryView->currentIndex().isValid()) return m_retainedSelection;
+    const auto sourceIndex = m_inventoryFilter->mapToSource(m_inventoryView->currentIndex());
+    if (!sourceIndex.isValid()) return {};
+    return m_inventoryModel->entryAt(sourceIndex.row());
 }
 
 void PackEditorPage::showSelectedMod(const QJsonObject& mod)
 {
     if (mod.isEmpty()) {
-        m_selectedDetails->clear();
+        m_selectedDetails->setText(tr("Select a mod to see its details and actions."));
+        m_targetClient->setChecked(false);
+        m_targetServer->setChecked(false);
+        m_targetClient->setEnabled(false);
+        m_targetServer->setEnabled(false);
+        m_applyTargetsButton->setEnabled(false);
+        m_updateModButton->setEnabled(false);
+        m_ignoreButton->setEnabled(false);
+        m_unmanageButton->setEnabled(false);
+        m_removeResourceButton->setEnabled(false);
         return;
     }
-    m_selectedDetails->setText(tr("%1 — %2\nProject/version: %3 / %4\nFilename: %5\nSHA-256: %6\nManaged: %7\nTargets: %8\nSync state: %9")
-                                   .arg(mod.value("name").toString(mod.value("id").toString()), mod.value("provider").toString(),
-                                        mod.value("project_id").toString(), mod.value("version").toString(),
-                                        mod.value("filename").toString(), mod.value("sha256").toString(),
-                                        mod.value("managed").toBool() ? tr("yes") : tr("no"), displayTargets(mod),
-                                        packEditorStatusSummary(mod)));
+    const QString name = mod.value("name").toString(mod.value("filename").toString(tr("Name unavailable")));
+    const QString provider = mod.value("provider").toString(mod.value("source").toString(tr("Unknown source")));
+    const QString targets = displayTargets(mod);
+    const int modelRow = m_inventoryModel->rowForResourceKey(m_inventoryModel->resourceKey(mod));
+    const QString state = modelRow >= 0
+        ? m_inventoryModel->index(modelRow, PackEditorInventoryModel::StateColumn).data(Qt::DisplayRole).toString()
+        : tr("Unknown");
+    const QString technical = tr("Filename: %1\nProject ID: %2\nResource ID: %3\nSHA-256: %4")
+                                  .arg(mod.value("filename").toString(), mod.value("project_id").toString(),
+                                       mod.value("identity").toString(mod.value("id").toString()), mod.value("sha256").toString());
+    m_selectedDetails->setText(tr("%1\nVersion %2 · %3\n\nIncluded on: %4\nPack state: %5\nLocal state: %6")
+        .arg(name, mod.value("version").toString(tr("Unknown version")), provider, targets, state,
+             packEditorStatusSummary(mod)));
+    if (!m_inventoryView->currentIndex().isValid())
+        m_selectedDetails->setText(m_selectedDetails->text() + tr("\n\nThis mod is outside the current filters."));
+    m_technicalDetails->setText(technical);
+    const QSignalBlocker blockClient(m_targetClient);
+    const QSignalBlocker blockServer(m_targetServer);
+    const auto assigned = targetsFor(mod);
+    m_targetClient->setChecked(assigned.contains(QStringLiteral("client")));
+    m_targetServer->setChecked(assigned.contains(QStringLiteral("server")));
+    const bool selectedVisible = m_inventoryView->currentIndex().isValid();
+    const bool schemaThree = selectedVisible && m_state.lock.toObject().value("schema").toInt() == 3 && mod.value("managed").toBool();
+    m_targetClient->setEnabled(schemaThree && !m_bridge);
+    m_targetServer->setEnabled(schemaThree && !m_bridge);
+    m_applyTargetsButton->setEnabled(false);
+    const bool managed = mod.value("managed").toBool();
+    m_updateModButton->setEnabled(!m_bridge && m_state.lock.toObject().value("schema").toInt() == 3 &&
+                                  !mod.value("project_id").toString().isEmpty());
+    m_ignoreButton->setEnabled(!m_bridge);
+    m_unmanageButton->setEnabled(!m_bridge && managed);
+    m_removeResourceButton->setEnabled(!m_bridge && managed && m_state.lock.toObject().value("schema").toInt() == 3);
+    if (!m_bridge && m_filesTable->currentIndex().isValid())
+        m_removeFileButton->setEnabled(m_state.lock.toObject().value("schema").toInt() == 3);
 }
 
 void PackEditorPage::setSelectedTargets(const QJsonArray& targets)
 {
     const auto mod = selectedMod();
-    if (mod.isEmpty()) return;
-    runOperation("set-mod-targets", packEditorSetModTargetsParams(mod.value("id").toString(), targets),
+    if (mod.isEmpty() || !packEditorTargetsAreValid(targets) || m_state.lock.toObject().value("schema").toInt() != 3) return;
+    const QString identity = mod.value("identity").toString(mod.value("id").toString());
+    runOperation("set-mod-targets", packEditorSetModTargetsParams(identity, targets),
                  [this](const QJsonObject&) { loadAuthorState(); });
 }
 
@@ -889,6 +1077,13 @@ void PackEditorPage::setSelectedResourceState(const QString& state)
 {
     const auto mod = selectedMod();
     if (mod.isEmpty()) return;
+    const QString name = mod.value("name").toString(mod.value("filename").toString());
+    const QString consequence = state == QStringLiteral("ignored")
+        ? tr("Exclude %1 from the pack? Its installed files will stay on this computer.").arg(name)
+        : tr("Stop managing %1? Its installed files will stay on this computer as local only content.").arg(name);
+    if (QMessageBox::question(this, state == QStringLiteral("ignored") ? tr("Exclude mod") : tr("Stop managing mod"),
+                              consequence, QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
     runOperation("set-resource-state", {{"kind", "mod"}, {"identity", mod.value("identity")}, {"state", state}},
                  [this](const QJsonObject&) { loadAuthorState(); });
 }
@@ -957,6 +1152,12 @@ void PackEditorPage::setSelectedFileState(const QString& state)
     const int row = m_filesTable->currentIndex().row();
     const auto file = m_filesModel->entryAt(row);
     if (file.isEmpty()) return;
+    const QString consequence = state == QStringLiteral("ignored")
+        ? tr("Exclude %1 from the pack? The local file will stay on this computer.").arg(file.value("target").toString())
+        : tr("Stop managing %1? The local file will stay on this computer as local only content.").arg(file.value("target").toString());
+    if (QMessageBox::question(this, state == QStringLiteral("ignored") ? tr("Exclude file") : tr("Stop managing file"),
+                              consequence, QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
     runOperation("set-resource-state", {{"kind", "file"}, {"identity", file.value("path")}, {"state", state}},
                  [this](const QJsonObject&) { loadAuthorState(); });
 }
@@ -967,7 +1168,7 @@ void PackEditorPage::removeSelectedFile()
     const auto file = m_filesModel->entryAt(row);
     if (file.isEmpty()) return;
     const auto reply = QMessageBox::warning(this, tr("Remove managed file"),
-                                            tr("Remove %1 from the desired pack state? ModLock will preserve local bytes if they have changed.")
+                                            tr("Remove %1 from the pack and delete the matching local file(s)? ModLock checks the file hashes and stops if a file has changed locally.")
                                                 .arg(file.value("target").toString()),
                                             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
     if (reply != QMessageBox::Yes) return;
@@ -1014,6 +1215,10 @@ void PackEditorPage::removeTrackedPath()
     const int row = m_trackedTable->currentIndex().row();
     const auto tracked = m_trackedModel->entryAt(row);
     if (tracked.isEmpty()) return;
+    if (QMessageBox::question(this, tr("Stop watching this path"),
+                              tr("Stop tracking %1? Existing files on this computer will stay in place.").arg(tracked.value("path").toString()),
+                              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
     runOperation("set-tracked-path", {{"path", tracked.value("path")}, {"targets", toTargets(targetsFor(tracked))},
                                        {"policy", tracked.value("policy")}, {"enabled", false}},
                  [this](const QJsonObject&) { loadAuthorState(); });
@@ -1024,7 +1229,7 @@ void PackEditorPage::removeSelectedResource()
     const auto mod = selectedMod();
     if (mod.isEmpty()) return;
     const auto reply = QMessageBox::warning(this, tr("Remove mod from pack"),
-                                            tr("Remove %1 from the desired pack state? ModLock will recheck its managed files and preserve local bytes if they have changed.")
+                                            tr("Remove %1 from the pack and delete its matching local file(s)? ModLock checks the file hashes and stops if a file has changed locally.")
                                                 .arg(mod.value("name").toString(mod.value("id").toString())),
                                             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
     if (reply != QMessageBox::Yes) return;
@@ -1037,14 +1242,13 @@ void PackEditorPage::removeSelectedResource()
 void PackEditorPage::showPublishPreview()
 {
     m_previewId.clear();
-    m_publishButton->setEnabled(false);
     runOperation("publish-preview", {{"target_roots", modLockTargetRoots(m_minecraftInstance->gameRoot(), m_minecraftInstance->instanceRoot())}});
 }
 
-void PackEditorPage::publish()
+void PackEditorPage::publish(const QString& commitMessage)
 {
-    if (m_previewId.isEmpty() || m_commitMessage->text().trimmed().isEmpty()) return;
-    runOperation("publish", {{"preview_id", m_previewId}, {"commit_message", m_commitMessage->text().trimmed()},
+    if (m_previewId.isEmpty() || commitMessage.trimmed().isEmpty()) return;
+    runOperation("publish", {{"preview_id", m_previewId}, {"commit_message", commitMessage.trimmed()},
                               {"target_roots", modLockTargetRoots(m_minecraftInstance->gameRoot(), m_minecraftInstance->instanceRoot())}});
 }
 

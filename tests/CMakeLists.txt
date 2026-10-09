@@ -72,6 +72,9 @@ ecm_add_test(ConfigMigration_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSI
 
 ecm_add_test(PageContainerClose_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME PageContainerClose)
+if(UNIX AND NOT APPLE)
+    set_tests_properties(PageContainerClose PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
 
 ecm_add_test(PackEditorModel_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME PackEditorModel)

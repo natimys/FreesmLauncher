@@ -82,6 +82,15 @@ runs:
           tomlplusplus:p
           libarchive:p
 
+    # CMake builds the pinned ModLock bridge during configuration on 64-bit
+    # Windows. Keep the toolchain version tied to the checked-out submodule.
+    - name: Setup Go (MinGW)
+      if: ${{ inputs.msystem != '' }}
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: libraries/modlock/go.mod
+        cache-dependency-path: libraries/modlock/go.sum
+
     - name: List pacman packages (MinGW)
       if: ${{ inputs.msystem != '' }}
       shell: msys2 {0}
