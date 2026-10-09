@@ -29,6 +29,7 @@ bool packEditorPageShouldDisplay(bool isMinecraftInstance, bool hasAuthorWorkspa
 bool modLockImportSchemaSupported(int schema);
 QJsonObject packEditorSetModTargetsParams(const QString& id, const QJsonArray& targets);
 bool packEditorTargetsAreValid(const QJsonArray& targets);
+bool packEditorPublishResultIsConfirmed(const QJsonObject& result);
 
 // Single-row-per-resource inventory for the Pack Editor. The proxy owns the
 // interactive search and target/state filters while this model keeps stable
@@ -36,7 +37,7 @@ bool packEditorTargetsAreValid(const QJsonArray& targets);
 class PackEditorInventoryModel final : public QAbstractTableModel {
    public:
     enum Column { NameColumn, VersionColumn, ProviderColumn, TargetsColumn, StateColumn, ColumnCount };
-    enum Role { EntryRole = Qt::UserRole + 1, IdentityRole, SearchTextRole, TargetsRole, StateRole };
+    enum Role { EntryRole = Qt::UserRole + 1, IdentityRole, ResourceKeyRole, SearchTextRole, TargetsRole, StateRole };
 
     explicit PackEditorInventoryModel(QObject* parent = nullptr);
     int rowCount(const QModelIndex& parent = {}) const override;
@@ -46,7 +47,8 @@ class PackEditorInventoryModel final : public QAbstractTableModel {
     void setEntries(const QJsonArray& entries);
     void setIcon(const QString& identity, const QIcon& icon);
     QJsonObject entryAt(int row) const;
-    int rowForIdentity(const QString& identity) const;
+    QString resourceKey(const QJsonObject& entry) const;
+    int rowForResourceKey(const QString& key) const;
 
    private:
     QString identity(const QJsonObject& entry) const;

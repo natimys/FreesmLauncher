@@ -30,6 +30,9 @@ class QToolButton;
 class QLineEdit;
 class QNetworkReply;
 class PackEditorTableModel;
+class QResizeEvent;
+class QSplitter;
+class QGridLayout;
 
 class PackEditorPage final : public QWidget, public BasePage {
     Q_OBJECT
@@ -45,6 +48,9 @@ class PackEditorPage final : public QWidget, public BasePage {
     bool shouldDisplay() const override;
     bool prepareToClose() override;
     void openedImpl() override;
+
+   protected:
+    void resizeEvent(QResizeEvent* event) override;
 
    private:
     void loadAuthorState();
@@ -81,6 +87,10 @@ class PackEditorPage final : public QWidget, public BasePage {
     PackEditorInventoryModel* m_inventoryModel = nullptr;
     PackEditorInventoryFilter* m_inventoryFilter = nullptr;
     QTableView* m_inventoryView = nullptr;
+    QSplitter* m_inventorySplitter = nullptr;
+    QGridLayout* m_inventoryToolbar = nullptr;
+    QGridLayout* m_headerLayout = nullptr;
+    QLabel* m_pageTitle = nullptr;
     QLineEdit* m_search = nullptr;
     QComboBox* m_targetFilter = nullptr;
     QComboBox* m_stateFilter = nullptr;
@@ -120,6 +130,7 @@ class PackEditorPage final : public QWidget, public BasePage {
     QSet<QString> m_launcherCachedIconIdentities;
     bool m_launcherMetadataLoadRequested = false;
     bool m_hasWorkspace = false;
+    bool m_compactLayout = false;
     QString m_operation;
     QString m_previewId;
     QJsonObject m_result;

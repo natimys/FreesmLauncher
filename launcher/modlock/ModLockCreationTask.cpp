@@ -68,7 +68,7 @@ void ModLockCreationTask::startInstall(const QJsonArray& confirmedConflicts)
     m_installError = {};
         m_bridge = std::make_unique<ModLockBridge>(m_schema >= 3 ? m_instanceRoot : m_minecraftRoot);
     connect(m_bridge.get(), &ModLockBridge::progress, this, [this](const QString&, const QString& message) { setStatus(message); });
-    connect(m_bridge.get(), &ModLockBridge::completed, this, [this](const QString&, const QJsonObject&) {});
+    connect(m_bridge.get(), &ModLockBridge::completed, this, [](const QString&, const QJsonObject&) {});
     connect(m_bridge.get(), &ModLockBridge::failed, this, [this](const QString&, const QJsonObject& error) {
         m_installError = error;
     });

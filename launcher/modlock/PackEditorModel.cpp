@@ -5,6 +5,7 @@
 #include <QCollator>
 #include <QSet>
 #include <QStringList>
+#include <algorithm>
 #include <utility>
 
 QString packEditorStatusSummary(const QJsonObject& entry)
@@ -52,6 +53,13 @@ bool packEditorTargetsAreValid(const QJsonArray& targets)
     return client || server;
 }
 
+bool packEditorPublishResultIsConfirmed(const QJsonObject& result)
+{
+    return result.value("pushed").isBool() && result.value("pushed").toBool() &&
+           !result.value("commit").toString().trimmed().isEmpty() &&
+           !result.value("branch").toString().trimmed().isEmpty();
+}
+
 PackEditorInventoryModel::PackEditorInventoryModel(QObject* parent) : QAbstractTableModel(parent) {}
 
 int PackEditorInventoryModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : m_entries.size(); }
@@ -63,6 +71,7 @@ QVariant PackEditorInventoryModel::data(const QModelIndex& index, int role) cons
     const auto& entry = m_entries.at(index.row());
     if (role == EntryRole) return entry;
     if (role == IdentityRole) return identity(entry);
+    if (role == ResourceKeyRole) return resourceKey(entry);
     if (role == TargetsRole) return entry.value("targets").toArray();
     if (role == StateRole) return entry.value("status").toString();
     if (role == SearchTextRole) {
@@ -128,7 +137,7 @@ void PackEditorInventoryModel::setEntries(const QJsonArray& entries)
     beginResetModel();
     m_entries.clear();
     m_entries.reserve(entries.size());
-    QHash<QString, int> rowsByIdentity;
+    QHash<QString, int> rowsByResourceKey;
     const auto statusRank = [](const QString& status) {
         if (status == QStringLiteral("conflict")) return 6;
         if (status == QStringLiteral("missing")) return 5;
@@ -141,13 +150,13 @@ void PackEditorInventoryModel::setEntries(const QJsonArray& entries)
         if (!value.isObject()) continue;
         const auto incoming = value.toObject();
         const QString resourceIdentity = identity(incoming);
-        const QString key = resourceIdentity + QLatin1Char('\0') + incoming.value("filename").toString();
-        if (resourceIdentity.isEmpty() || !rowsByIdentity.contains(key)) {
-            rowsByIdentity.insert(key, m_entries.size());
+        const QString key = resourceKey(incoming);
+        if (resourceIdentity.isEmpty() || !rowsByResourceKey.contains(key)) {
+            rowsByResourceKey.insert(key, m_entries.size());
             m_entries.append(incoming);
             continue;
         }
-        auto merged = m_entries.at(rowsByIdentity.value(key));
+        auto merged = m_entries.at(rowsByResourceKey.value(key));
         auto states = merged.value("target_states").toArray();
         QSet<QString> stateTargets;
         for (const auto& state : states) stateTargets.insert(state.toObject().value("target_id").toString());
@@ -162,7 +171,7 @@ void PackEditorInventoryModel::setEntries(const QJsonArray& entries)
         }
         if (statusRank(incoming.value("status").toString()) > statusRank(merged.value("status").toString()))
             merged.insert("status", incoming.value("status"));
-        m_entries[rowsByIdentity.value(key)] = merged;
+        m_entries[rowsByResourceKey.value(key)] = merged;
     }
     endResetModel();
 }
@@ -177,9 +186,17 @@ void PackEditorInventoryModel::setIcon(const QString& key, const QIcon& icon)
 }
 
 QJsonObject PackEditorInventoryModel::entryAt(int row) const { return row >= 0 && row < m_entries.size() ? m_entries.at(row) : QJsonObject(); }
-int PackEditorInventoryModel::rowForIdentity(const QString& key) const
+QString PackEditorInventoryModel::resourceKey(const QJsonObject& entry) const
 {
-    for (int row = 0; row < m_entries.size(); ++row) if (identity(m_entries.at(row)) == key) return row;
+    const QStringList parts{identity(entry), entry.value("filename").toString(), entry.value("provider").toString(),
+                            entry.value("source").toString(), entry.value("project_id").toString(),
+                            entry.value("version_id").toString(), entry.value("version").toString()};
+    if (std::all_of(parts.cbegin(), parts.cend(), [](const QString& part) { return part.isEmpty(); })) return {};
+    return parts.join(QLatin1Char('\0'));
+}
+int PackEditorInventoryModel::rowForResourceKey(const QString& key) const
+{
+    for (int row = 0; row < m_entries.size(); ++row) if (resourceKey(m_entries.at(row)) == key) return row;
     return -1;
 }
 QString PackEditorInventoryModel::identity(const QJsonObject& entry) const

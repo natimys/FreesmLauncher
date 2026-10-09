@@ -35,6 +35,7 @@ PackEditorReviewDialog::PackEditorReviewDialog(const QJsonObject& preview, QWidg
 {
     setWindowTitle(tr("Review pack changes"));
     resize(680, 580);
+    setMinimumSize(400, 340);
     auto* layout = new QVBoxLayout(this);
     QString context = tr("Branch: %1").arg(preview.value("branch").toString(tr("Unknown")));
     if (preview.contains("revision")) context += tr("\nRevision: %1").arg(preview.value("revision").toString());
@@ -68,7 +69,7 @@ PackEditorReviewDialog::PackEditorReviewDialog(const QJsonObject& preview, QWidg
     addGroup(tr("Updated files"), files.value("updated").toArray());
     addGroup(tr("Removed files"), files.value("removed").toArray());
     addGroup(tr("Target changes"), preview.value("target_changes").toArray());
-    addGroup(tr("Excluded from this publish"), preview.value("ignored").toArray());
+    addGroup(tr("Excluded from this publish"), preview.value("ignored").toArray(), {}, false);
     addGroup(tr("Validation warnings"), preview.value("warnings").toArray(), {}, false);
     if (total == 0) layout->addWidget(new QLabel(tr("The preview reports no pack changes."), this));
     layout->addWidget(tree, 1);
