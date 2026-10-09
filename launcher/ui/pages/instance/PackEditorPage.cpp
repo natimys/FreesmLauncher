@@ -512,8 +512,12 @@ void PackEditorPage::resizeEvent(QResizeEvent* event)
     m_inventoryToolbar->removeWidget(m_targetFilter);
     m_inventoryToolbar->removeWidget(m_stateFilter);
     m_inventoryToolbar->removeWidget(m_addModButton);
-    for (auto* widget : {m_pageTitle, m_status, m_refreshButton, m_promoteLockButton, m_scanButton, m_previewButton})
-        m_headerLayout->removeWidget(widget);
+    m_headerLayout->removeWidget(m_pageTitle);
+    m_headerLayout->removeWidget(m_status);
+    m_headerLayout->removeWidget(m_refreshButton);
+    m_headerLayout->removeWidget(m_promoteLockButton);
+    m_headerLayout->removeWidget(m_scanButton);
+    m_headerLayout->removeWidget(m_previewButton);
     if (compact) {
         m_headerLayout->addWidget(m_pageTitle, 0, 0);
         m_headerLayout->addWidget(m_status, 0, 1, 1, 2);
